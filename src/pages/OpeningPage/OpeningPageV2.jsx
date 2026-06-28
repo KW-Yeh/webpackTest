@@ -39,7 +39,11 @@ const OpeningPageV2 = () => {
     );
     const [userName, setUserName] = useState(initUserName);
     const [id, setId] = useState("");
-    const [wording, setWording] = useState("");
+    const [wording, setWording] = useState(() => {
+        const storedNotice = window.sessionStorage.getItem('partyExitNotice') || "";
+        if (storedNotice) window.sessionStorage.removeItem('partyExitNotice');
+        return location.state?.notice || storedNotice;
+    });
 
     const resolvePlayerName = () => {
         const trimmedName = userName.trim();
@@ -98,6 +102,7 @@ const OpeningPageV2 = () => {
     const modeSelection = () => (
         <div className="opening-stage opening-stage-mode">
             <div className="opening-title">{formatWording("general.opening.modeTitle", {})}</div>
+            {wording && <div className="wording" role="status">{wording}</div>}
             <div className="mode-options">
                 <button type="button" className="mode-option mode-option-local" onClick={handleLocalBtnClick}>
                     <span>{formatWording("general.btn.localMode", {})}</span>
