@@ -1,127 +1,157 @@
-@mixin flexContainer($width, $height) {
-  width: $width;
-  height: $height;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
 .container-opening {
-  @include flexContainer(100%, auto);
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
 }
 
 .opening-page {
-  @include flexContainer(80%, 100%);
-  max-width: 370px;
-  padding: 10px;
-  /* From https://css.glass */
-  background: rgba(255, 255, 255, 0.77);
-  border-radius: 0.5em;
-  box-shadow: 0 4px 30px rgba(86, 86, 86, 0.1), 0 2px 15px rgba(112, 112, 112, 0.3);
-  backdrop-filter: blur(5.6px);
-  -webkit-backdrop-filter: blur(5.6px);
-  border: 1px solid rgba(255, 255, 255, 1);
+  width: min(100%, 430px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 24px;
+  padding: 32px;
+  background: var(--apple-canvas);
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-lg);
 
   .page-header {
-    @include flexContainer(100%, auto);
-    margin-top: 15px;
     text-align: center;
-    font-weight: bold;
-    font-size: 24px;
+    font-family: var(--apple-font-display);
+    font-size: 40px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: 0;
+    color: var(--apple-ink);
   }
+
   .form {
-    width: 90%;
-    height: 100%;
-    margin: 15px 0 5px 0;
-    align-items: center;
-    text-align: center;
+    width: 100%;
     display: flex;
     flex-direction: column;
-
-    .btn-block {
-      display: flex;
-      flex-direction: row;
-      width: 100%;
-      height: 40px;
-      align-items: center;
-      .start-local-btn {
-        flex: 1;
-        height: auto;
-        margin-right: 8px;
-        padding: 5px;
-        cursor: pointer;
-        border-radius: 0.3em;
-        border: 1px solid #04364b;
-        background-color: #36a4d3;
-        text-align: center;
-        font-weight: bold;
-        &:hover {
-          background-color: #87ccea;
-          box-shadow: rgba(54, 164, 211, 0.4) 0 0 20px;
-        }
-      }
-      .start-party-btn {
-        flex: 1;
-        height: auto;
-        margin-left: 8px;
-        padding: 5px;
-        cursor: pointer;
-        border-radius: 0.3em;
-        border: 1px solid #053616;
-        background-color: #44d271;
-        text-align: center;
-        font-weight: bold;
-        &:hover {
-          background-color: #7eeaa1;
-          box-shadow: rgba(68, 210, 113, 0.4) 0 0 20px;
-        }
-      }
-    }
   }
 }
 
-.userName {
+.opening-stage {
   width: 100%;
-  height: auto;
-  padding: 5px;
-  margin: 0;
   display: flex;
-  flex-direction: row;
-  .userName-input-label {
-    margin: auto;
-    padding: 0 8px 0 0;
-    display: flex;
-    flex-direction: row;
-  }
-  .userName-input {
-    flex: 1;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.opening-title {
+  font-family: var(--apple-font-display);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-align: center;
+  color: var(--apple-ink);
+}
+
+.mode-options,
+.party-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+}
+
+.mode-option,
+.party-action,
+.opening-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--apple-radius-pill);
+  font-size: 17px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.mode-option,
+.party-action {
+  width: 100%;
+  padding: 0 18px;
+  border: 1px solid var(--apple-primary);
+  color: var(--apple-primary);
+  background: var(--apple-canvas);
+
+  svg {
+    flex: 0 0 auto;
+    font-size: 18px;
   }
 }
+
+.mode-option-party,
+.party-action-join {
+  color: var(--apple-on-primary);
+  background: var(--apple-primary);
+}
+
+.opening-back-btn {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 0 4px;
+  color: var(--apple-primary);
+  background: transparent;
+
+  svg {
+    font-size: 18px;
+  }
+}
+
+.party-setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.opening-field,
+.userName,
 .roomID {
   width: 100%;
-  height: auto;
-  padding: 5px;
-  margin: 0;
   display: flex;
-  flex-direction: row;
-  .roomID-input-label {
-    margin: auto;
-    padding: 0 8px 0 0;
-    display: flex;
-    flex-direction: row;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+}
+
+.opening-field-label,
+.userName-input-label,
+.roomID-input-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--apple-muted);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+
+  svg {
+    font-size: 18px;
   }
-  .roomID-input {
-    flex: 1;
-  }
+}
+
+.opening-input,
+.userName-input,
+.roomID-input {
+  width: 100%;
 }
 
 .wording {
-  color: #d93838;
-  font-size: 10px;
-  width: 100%;
-  height: 20px;
+  min-height: 20px;
+  color: #b00020;
+  font-size: 14px;
+  line-height: 1.43;
+  letter-spacing: 0;
   text-align: center;
-  margin: auto 0;
 }
 
 .temp-container {
@@ -132,8 +162,45 @@
   flex-direction: row;
   align-items: center;
   padding: 8px 10px;
-  border-radius: 0.5em;
-  &:hover {
-    padding: 6px 10px 10px 10px;
+  border-radius: var(--apple-radius-sm);
+}
+
+@media (max-width: 640px) {
+  .container-opening {
+    padding: 16px;
+    align-items: stretch;
+  }
+
+  .opening-page {
+    width: 100%;
+    min-height: calc(100vh - 32px);
+    justify-content: center;
+    padding: 24px 18px;
+    border-radius: 0;
+  }
+
+  .opening-page .page-header {
+    font-size: 34px;
+  }
+
+  .mode-options,
+  .party-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-option,
+  .party-action {
+    justify-content: space-between;
+    padding: 0 20px;
+  }
+}
+
+@media (max-width: 419px) {
+  .opening-page .page-header {
+    font-size: 28px;
+  }
+
+  .opening-title {
+    font-size: 21px;
   }
 }
