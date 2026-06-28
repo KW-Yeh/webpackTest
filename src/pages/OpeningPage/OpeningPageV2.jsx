@@ -44,24 +44,26 @@ const OpeningPageV2 = () => {
 
     const handlePartyBtnClick = () => {
         logger.success(`Start with party mode!`);
-        if (checkInputs(id) && [...new Set(id)].length === 9) {
-            let _name = formatWording("general.default.playerName", {});
-            if (userName !== "") _name = userName;
-            if (id !== "") {
-                dispatch(setRoom(id));
-                logger.info("slave");
-                dispatch(setRole("slave"));
-            } else {
-                logger.info("host");
-                dispatch(setRole("host"));
-            }
-            dispatch(setUser(_name));
-            storage.setStorage(env.LOCAL.STORAGE.PLAYER_NAME, _name);
-            storage.setStorage(env.LOCAL.STORAGE.ROOM_ID, id);
-            // navigate("/party");
-        } else {
+        let _name = formatWording("general.default.playerName", {});
+        if (userName !== "") _name = userName;
+
+        if (id !== "" && !checkInputs(id)) {
             noticeWording(formatWording("error.invalid.inputRoom", {}), 1500);
+            return;
         }
+
+        if (id !== "") {
+            dispatch(setRoom(id));
+            logger.info("slave");
+            dispatch(setRole("slave"));
+        } else {
+            logger.info("host");
+            dispatch(setRole("host"));
+        }
+        dispatch(setUser(_name));
+        storage.setStorage(env.LOCAL.STORAGE.PLAYER_NAME, _name);
+        storage.setStorage(env.LOCAL.STORAGE.ROOM_ID, id);
+        navigate("/party");
     };
 
     const noticeWording = (str, timeout = 0) => {
@@ -93,7 +95,7 @@ const OpeningPageV2 = () => {
                         type="text"
                         className="roomID-input"
                         value={id}
-                        onChange={(event) => setId(event.target.value.slice(0, 9))}
+                        onChange={(event) => setId(event.target.value.slice(0, 6))}
                         placeholder={formatWording("general.opening.inputRoom.placeHolder", {})}
                     />
                 </div>
