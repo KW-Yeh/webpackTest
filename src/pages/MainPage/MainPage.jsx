@@ -2,6 +2,8 @@ import '../../css/main.scss';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDispatch } from "react-redux";
 import { GrReturn } from "react-icons/gr";
+import { FiArrowLeft } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
 
 import { setWinningStep } from "../../component/Modal/modalSlice";
 
@@ -38,6 +40,7 @@ const initStorage = () => {
 
 const MainPage = () => {
     const dispatch = useDispatch();
+    const navigate = useNavigate();
     const { initTarget, initRecord, initStep, initIsWinning, initPlayingHistory, initHighestScore, initAverageScore } = initStorage();
     const [notice, setNotice] = useState("");
     const [num, setNum] = useState("");
@@ -180,6 +183,10 @@ const MainPage = () => {
                     cancel: () => handleOverlayClick()
                 }}
                 isAlertVisible={isAlertVisible}/>
+            <button type="button" className="game-back-btn" onClick={() => navigate(-1)}>
+                <FiArrowLeft aria-hidden="true" />
+                <span>{formatWording("general.btn.back", {})}</span>
+            </button>
             <div className="rule-block"><InfoBlock text={RULES}/></div>
             <div className="input-block">
                 <input type="number"

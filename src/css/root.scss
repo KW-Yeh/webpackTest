@@ -68,6 +68,27 @@ input:focus-visible {
   outline-offset: 2px;
 }
 
+.game-back-btn {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--apple-primary);
+  background: transparent;
+  border-radius: var(--apple-radius-pill);
+  font-size: 17px;
+  line-height: 1.2;
+  letter-spacing: 0;
+
+  svg {
+    flex: 0 0 auto;
+    font-size: 18px;
+  }
+}
+
 #root {
   display: flex;
   flex-direction: column;

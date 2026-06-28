@@ -76,6 +76,35 @@
   text-align: center;
 }
 
+.party-connection-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  width: min(100%, 360px);
+}
+
+.party-retry-btn,
+.party-change-room-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0 18px;
+  border-radius: var(--apple-radius-pill);
+  font-size: 17px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.party-retry-btn {
+  background: var(--apple-primary);
+  color: var(--apple-on-primary);
+}
+
+.party-change-room-btn {
+  border: 1px solid var(--apple-primary);
+  background: var(--apple-canvas);
+  color: var(--apple-primary);
+}
+
 .party-layout {
   display: flex;
   flex-direction: row;
@@ -348,6 +377,10 @@
   .party-room-code {
     font-size: 34px;
     letter-spacing: 4px;
+  }
+
+  .party-connection-actions {
+    flex-direction: column;
   }
 }
 

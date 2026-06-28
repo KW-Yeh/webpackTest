@@ -1,6 +1,8 @@
 import '../../css/party.scss';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { shallowEqual, useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
+import { FiArrowLeft } from "react-icons/fi";
 import { GrReturn } from "react-icons/gr";
 import { VscDebugRestart } from "react-icons/vsc";
 
@@ -21,6 +23,11 @@ const PHASE = {
     WIN: 'win',
 };
 
+const CONNECTION_TIMEOUT_MS = 20000;
+const CONNECTION_TIMEOUT_NOTICE = '連線逾時，請確認兩台裝置在同一個網路、手機沒有使用行動網路/VPN，並重新建立房間。';
+const CONNECTION_FAILED_NOTICE = '連線失敗，請重新建立房間後再試一次。';
+const CONNECTION_CLOSED_NOTICE = '對方已離線或連線已中斷。';
+
 const calculateAB = (guess, target) => {
     let a = 0, b = 0;
     guess.split('').forEach((digit, i) => {
@@ -33,6 +40,7 @@ const calculateAB = (guess, target) => {
 const createTarget = () => shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join('');
 
 const PartyPage = () => {
+    const navigate = useNavigate();
     const userName = useSelector(state => state.userReducer.name, shallowEqual);
     const role = useSelector(state => state.partyPageReducer.role, shallowEqual);
     const roomID = useSelector(state => state.partyPageReducer.roomID, shallowEqual);
@@ -48,6 +56,8 @@ const PartyPage = () => {
     const [winnerStep, setWinnerStep] = useState(0);
     const [target, setTarget] = useState('');
     const [restartPending, setRestartPending] = useState(false);
+    const [connectionIssue, setConnectionIssue] = useState(false);
+    const [retryKey, setRetryKey] = useState(0);
 
     const peerRef = useRef(null);
     const connRef = useRef(null);
@@ -57,6 +67,9 @@ const PartyPage = () => {
     const pendingSubmit = useRef(null);
     const myRecordRef = useRef([]);
     const peerRecordRef = useRef([]);
+    const connectionTimerRef = useRef(null);
+    const connectionIssueRef = useRef(false);
+    const suppressCloseNoticeRef = useRef(false);
 
     const updatePhase = useCallback((nextPhase) => {
         phaseRef.current = nextPhase;
@@ -75,6 +88,40 @@ const PartyPage = () => {
         peerRecordRef.current = peerRecord;
     }, [peerRecord]);
 
+    useEffect(() => {
+        connectionIssueRef.current = connectionIssue;
+    }, [connectionIssue]);
+
+    const clearConnectionTimer = useCallback(() => {
+        if (connectionTimerRef.current) {
+            clearTimeout(connectionTimerRef.current);
+            connectionTimerRef.current = null;
+        }
+    }, []);
+
+    const showConnectionIssue = useCallback((notice, error) => {
+        if (error) {
+            logger.error(notice, error?.type || error?.message || error);
+        } else {
+            logger.error(notice);
+        }
+        if (role !== 'host') {
+            connectionIssueRef.current = true;
+            setConnectionIssue(true);
+        }
+        setNotice(notice);
+    }, [role]);
+
+    const startConnectionTimer = useCallback(() => {
+        clearConnectionTimer();
+        connectionTimerRef.current = setTimeout(() => {
+            const conn = connRef.current;
+            if (!conn || conn.open || phaseRef.current === PHASE.PLAYING || phaseRef.current === PHASE.WIN) return;
+            showConnectionIssue(CONNECTION_TIMEOUT_NOTICE);
+            conn.close();
+        }, CONNECTION_TIMEOUT_MS);
+    }, [clearConnectionTimer, showConnectionIssue]);
+
     const sendMsg = useCallback((type, payload) => {
         try {
             connRef.current?.send({ type, payload });
@@ -92,6 +139,8 @@ const PartyPage = () => {
         setPeerRecord([]);
         setWinner(null);
         setRestartPending(false);
+        connectionIssueRef.current = false;
+        setConnectionIssue(false);
         updatePhase(PHASE.PLAYING);
         setNotice('');
         logger.info(`Game started. Target: ${tgt}`);
@@ -225,14 +274,65 @@ const PartyPage = () => {
         return true;
     }, [updatePhase]);
 
+    const releasePeerResources = useCallback(() => {
+        clearConnectionTimer();
+        suppressCloseNoticeRef.current = true;
+
+        const currentConn = connRef.current;
+        const currentPeer = peerRef.current;
+
+        connRef.current = null;
+        peerRef.current = null;
+
+        currentConn?.close();
+        currentPeer?.destroy();
+    }, [clearConnectionTimer]);
+
     const wireConn = useCallback((conn) => {
         connRef.current = conn;
-        conn.on('data', handleMessage);
-        conn.on('close', () => {
-            logger.info('Connection closed');
-            setNotice('對方已離線');
+        startConnectionTimer();
+        conn.on('open', () => {
+            clearConnectionTimer();
+            connectionIssueRef.current = false;
+            setConnectionIssue(false);
+            logger.info('Connection opened');
         });
-    }, [handleMessage]);
+        conn.on('data', handleMessage);
+        conn.on('error', (error) => {
+            clearConnectionTimer();
+            showConnectionIssue(CONNECTION_FAILED_NOTICE, error);
+        });
+        conn.on('close', () => {
+            clearConnectionTimer();
+            logger.info('Connection closed');
+            if (suppressCloseNoticeRef.current) {
+                suppressCloseNoticeRef.current = false;
+                return;
+            }
+            if (phaseRef.current !== PHASE.WIN && !connectionIssueRef.current) {
+                setNotice(CONNECTION_CLOSED_NOTICE);
+            }
+        });
+        conn.peerConnection?.addEventListener('iceconnectionstatechange', () => {
+            const state = conn.peerConnection?.iceConnectionState;
+            logger.info(`ICE connection state: ${state}`);
+            if (state === 'failed' || state === 'disconnected') {
+                showConnectionIssue(CONNECTION_FAILED_NOTICE);
+            }
+        });
+    }, [clearConnectionTimer, handleMessage, showConnectionIssue, startConnectionTimer]);
+
+    const handleRetryJoin = useCallback(() => {
+        if (role === 'host') return;
+
+        releasePeerResources();
+        setPeerName('');
+        connectionIssueRef.current = false;
+        setConnectionIssue(false);
+        setNotice(formatWording("party.status.connecting", {}));
+        updatePhase(PHASE.CONNECTING);
+        setRetryKey((key) => key + 1);
+    }, [releasePeerResources, role, updatePhase]);
 
     useEffect(() => {
         let destroyed = false;
@@ -240,6 +340,8 @@ const PartyPage = () => {
         const init = async () => {
             try {
                 if (role === 'host') {
+                    connectionIssueRef.current = false;
+                    setConnectionIssue(false);
                     const code = String(Math.floor(100000 + Math.random() * 900000));
                     setRoomCode(code);
                     setNotice(formatWording("party.status.waiting.opponent", {}));
@@ -247,6 +349,12 @@ const PartyPage = () => {
                     const peer = await createHostPeer(code);
                     if (destroyed) { peer.destroy(); return; }
                     peerRef.current = peer;
+                    peer.on('error', (error) => {
+                        showConnectionIssue(CONNECTION_FAILED_NOTICE, error);
+                    });
+                    peer.on('disconnected', () => {
+                        showConnectionIssue(CONNECTION_FAILED_NOTICE);
+                    });
 
                     peer.on('connection', (conn) => {
                         wireConn(conn);
@@ -259,10 +367,18 @@ const PartyPage = () => {
                         });
                     });
                 } else {
+                    connectionIssueRef.current = false;
+                    setConnectionIssue(false);
                     setNotice(formatWording("party.status.connecting", {}));
                     const peer = await createGuestPeer();
                     if (destroyed) { peer.destroy(); return; }
                     peerRef.current = peer;
+                    peer.on('error', (error) => {
+                        showConnectionIssue(CONNECTION_FAILED_NOTICE, error);
+                    });
+                    peer.on('disconnected', () => {
+                        showConnectionIssue(CONNECTION_FAILED_NOTICE);
+                    });
 
                     const conn = connectToHost(peer, roomID);
                     wireConn(conn);
@@ -274,8 +390,7 @@ const PartyPage = () => {
                     });
                 }
             } catch (e) {
-                logger.error('Peer init failed', e);
-                setNotice('連線失敗，請重試');
+                showConnectionIssue(CONNECTION_FAILED_NOTICE, e);
             }
         };
 
@@ -283,10 +398,19 @@ const PartyPage = () => {
 
         return () => {
             destroyed = true;
-            connRef.current?.close();
-            peerRef.current?.destroy();
+            releasePeerResources();
         };
-    }, []);
+    }, [releasePeerResources, retryKey, roomID, role, sendMsg, showConnectionIssue, startGame, updatePhase, userName, wireConn]);
+
+    useEffect(() => {
+        window.addEventListener('pagehide', releasePeerResources);
+        window.addEventListener('beforeunload', releasePeerResources);
+
+        return () => {
+            window.removeEventListener('pagehide', releasePeerResources);
+            window.removeEventListener('beforeunload', releasePeerResources);
+        };
+    }, [releasePeerResources]);
 
     const compareAnswer = useCallback(() => {
         if (phase !== PHASE.PLAYING) return;
@@ -370,6 +494,19 @@ const PartyPage = () => {
                 </div>
             )}
             <div className="party-status">{notice}</div>
+            {role !== 'host' && connectionIssue && (
+                <div className="party-connection-actions">
+                    <button type="button" className="party-retry-btn" onClick={handleRetryJoin}>
+                        再次嘗試
+                    </button>
+                    <button
+                        type="button"
+                        className="party-change-room-btn"
+                        onClick={() => navigate("/", { state: { stage: "party_setup" } })}>
+                        重新輸入代碼
+                    </button>
+                </div>
+            )}
         </div>
     );
 
@@ -377,6 +514,10 @@ const PartyPage = () => {
 
     return (
         <div className="container-party">
+            <button type="button" className="game-back-btn" onClick={() => navigate(-1)}>
+                <FiArrowLeft aria-hidden="true" />
+                <span>{formatWording("general.btn.back", {})}</span>
+            </button>
             <div className="party-header">
                 <span className="party-player-name">{userName}</span>
                 {peerName && <span className="party-vs"> vs </span>}

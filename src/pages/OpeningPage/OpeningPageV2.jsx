@@ -1,7 +1,7 @@
 import '../../css/opening_v2.scss';
 import React, { useState } from "react";
 import { useDispatch } from "react-redux";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { FiArrowLeft, FiLink, FiPlusCircle } from "react-icons/fi";
 import { TiUserOutline, TiKeyOutline } from "react-icons/ti";
@@ -26,12 +26,17 @@ const OPENING_STAGE = {
 
 const OpeningPageV2 = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const dispatch = useDispatch();
 
     const playerName = storage.getStorage(env.LOCAL.STORAGE.PLAYER_NAME);
     const initUserName = playerName && playerName !== "" ? playerName : "";
 
-    const [stage, setStage] = useState(OPENING_STAGE.SELECT_MODE);
+    const [stage, setStage] = useState(
+        location.state?.stage === OPENING_STAGE.PARTY_SETUP
+            ? OPENING_STAGE.PARTY_SETUP
+            : OPENING_STAGE.SELECT_MODE
+    );
     const [userName, setUserName] = useState(initUserName);
     const [id, setId] = useState("");
     const [wording, setWording] = useState("");
