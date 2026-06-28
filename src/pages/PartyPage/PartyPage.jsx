@@ -2,6 +2,7 @@ import '../../css/party.scss';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { shallowEqual, useSelector } from "react-redux";
 import { GrReturn } from "react-icons/gr";
+import { VscDebugRestart } from "react-icons/vsc";
 
 import { Logger } from "../../module/logger";
 import { checkInputs } from "../../module/checkInputs";
@@ -29,6 +30,8 @@ const calculateAB = (guess, target) => {
     return { a, b };
 };
 
+const createTarget = () => shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join('');
+
 const PartyPage = () => {
     const userName = useSelector(state => state.userReducer.name, shallowEqual);
     const role = useSelector(state => state.partyPageReducer.role, shallowEqual);
@@ -44,14 +47,25 @@ const PartyPage = () => {
     const [winner, setWinner] = useState(null);
     const [winnerStep, setWinnerStep] = useState(0);
     const [target, setTarget] = useState('');
+    const [restartPending, setRestartPending] = useState(false);
 
     const peerRef = useRef(null);
     const connRef = useRef(null);
+    const phaseRef = useRef(PHASE.CONNECTING);
     const targetRef = useRef('');
     const stepRef = useRef(0);
     const pendingSubmit = useRef(null);
     const myRecordRef = useRef([]);
     const peerRecordRef = useRef([]);
+
+    const updatePhase = useCallback((nextPhase) => {
+        phaseRef.current = nextPhase;
+        setPhase(nextPhase);
+    }, []);
+
+    useEffect(() => {
+        phaseRef.current = phase;
+    }, [phase]);
 
     useEffect(() => {
         myRecordRef.current = myRecord;
@@ -77,10 +91,20 @@ const PartyPage = () => {
         setMyRecord([]);
         setPeerRecord([]);
         setWinner(null);
-        setPhase(PHASE.PLAYING);
+        setRestartPending(false);
+        updatePhase(PHASE.PLAYING);
         setNotice('');
         logger.info(`Game started. Target: ${tgt}`);
-    }, []);
+    }, [updatePhase]);
+
+    const restartGameAsHost = useCallback((requestedBy = userName) => {
+        if (role !== 'host') return false;
+        const tgt = createTarget();
+        sendMsg('party:restart', { requestedBy });
+        sendMsg('party:start', { target: tgt });
+        startGame(connRef.current, tgt);
+        return true;
+    }, [role, sendMsg, startGame, userName]);
 
     const handleMessage = useCallback((data) => {
         logger.info(`Received: ${data.type}`);
@@ -92,6 +116,24 @@ const PartyPage = () => {
             case 'party:start': {
                 const tgt = data.payload.target;
                 startGame(connRef.current, tgt);
+                break;
+            }
+            case 'party:request-restart': {
+                if (role !== 'host' || phaseRef.current !== PHASE.WIN) {
+                    logger.info('Ignored restart request outside win phase');
+                    break;
+                }
+
+                const requestedName = data.payload && data.payload.name
+                    ? data.payload.name
+                    : formatWording("general.default.playerName", {});
+                setNotice(formatWording("party.status.restart.requested", { name: requestedName }));
+                restartGameAsHost(requestedName);
+                break;
+            }
+            case 'party:restart': {
+                setRestartPending(false);
+                setNotice(formatWording("party.status.restart.accepted", {}));
                 break;
             }
             case 'party:submit': {
@@ -128,25 +170,25 @@ const PartyPage = () => {
                 if (myWin && peerWin) {
                     setWinner('draw');
                     setWinnerStep(myEntry.step);
-                    setPhase(PHASE.WIN);
+                    updatePhase(PHASE.WIN);
                 } else if (myWin) {
                     setWinner('me');
                     setWinnerStep(myEntry.step);
-                    setPhase(PHASE.WIN);
+                    updatePhase(PHASE.WIN);
                 } else if (peerWin) {
                     setWinner('peer');
                     setWinnerStep(peerEntry.step);
-                    setPhase(PHASE.WIN);
+                    updatePhase(PHASE.WIN);
                 } else {
                     setMyNum('');
-                    setPhase(PHASE.PLAYING);
+                    updatePhase(PHASE.PLAYING);
                 }
                 break;
             }
             default:
                 logger.error('Unknown message type', data.type);
         }
-    }, [startGame]);
+    }, [restartGameAsHost, role, startGame, updatePhase]);
 
     // Handle the case where peer submitted BEFORE me (stored as fromPeer), then I submit
     const handleMySubmitWithPeerPending = useCallback((myEntry) => {
@@ -167,21 +209,21 @@ const PartyPage = () => {
         if (myWin && peerWin) {
             setWinner('draw');
             setWinnerStep(myEntry.step);
-            setPhase(PHASE.WIN);
+            updatePhase(PHASE.WIN);
         } else if (myWin) {
             setWinner('me');
             setWinnerStep(myEntry.step);
-            setPhase(PHASE.WIN);
+            updatePhase(PHASE.WIN);
         } else if (peerWin) {
             setWinner('peer');
             setWinnerStep(peerEntry.step);
-            setPhase(PHASE.WIN);
+            updatePhase(PHASE.WIN);
         } else {
             setMyNum('');
-            setPhase(PHASE.PLAYING);
+            updatePhase(PHASE.PLAYING);
         }
         return true;
-    }, []);
+    }, [updatePhase]);
 
     const wireConn = useCallback((conn) => {
         connRef.current = conn;
@@ -211,7 +253,7 @@ const PartyPage = () => {
                         conn.on('open', () => {
                             sendMsg('party:hello', { name: userName });
                             // Generate and share target
-                            const tgt = shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join('');
+                            const tgt = createTarget();
                             sendMsg('party:start', { target: tgt });
                             startGame(conn, tgt);
                         });
@@ -224,7 +266,7 @@ const PartyPage = () => {
 
                     const conn = connectToHost(peer, roomID);
                     wireConn(conn);
-                    setPhase(PHASE.WAITING_TARGET);
+                    updatePhase(PHASE.WAITING_TARGET);
 
                     conn.on('open', () => {
                         sendMsg('party:hello', { name: userName });
@@ -262,13 +304,26 @@ const PartyPage = () => {
         const hadPeerPending = handleMySubmitWithPeerPending(myEntry);
         if (!hadPeerPending) {
             pendingSubmit.current = myEntry;
-            setPhase(PHASE.SUBMITTED);
+            updatePhase(PHASE.SUBMITTED);
             setNotice(formatWording("party.status.waiting.answer", {}));
         }
 
         sendMsg('party:submit', { guess: myNum, a, b, step: stepRef.current });
         setMyNum('');
-    }, [phase, myNum, sendMsg, handleMySubmitWithPeerPending]);
+    }, [phase, myNum, sendMsg, handleMySubmitWithPeerPending, updatePhase]);
+
+    const handleRestartClick = useCallback(() => {
+        if (phase !== PHASE.WIN || restartPending) return;
+
+        if (role === 'host') {
+            restartGameAsHost(userName);
+            return;
+        }
+
+        setRestartPending(true);
+        setNotice(formatWording("party.status.restart.pending", {}));
+        sendMsg('party:request-restart', { name: userName });
+    }, [phase, restartPending, restartGameAsHost, role, sendMsg, userName]);
 
     const renderRecord = (record, label) => (
         <div className="party-record-column">
@@ -352,13 +407,23 @@ const PartyPage = () => {
                         )}
 
                         {phase === PHASE.WIN && (
-                            <div className="party-win-banner">
-                                {winner === 'draw'
-                                    ? formatWording("party.win.draw", {})
-                                    : formatWording("party.win.winner", {
-                                        name: winner === 'me' ? userName : peerName
-                                    })
-                                }
+                            <div className="party-win-panel">
+                                <div className="party-win-banner">
+                                    {winner === 'draw'
+                                        ? formatWording("party.win.draw", {})
+                                        : formatWording("party.win.winner", {
+                                            name: winner === 'me' ? userName : peerName
+                                        })
+                                    }
+                                </div>
+                                <button
+                                    type="button"
+                                    className="party-restart-btn"
+                                    disabled={restartPending}
+                                    onClick={handleRestartClick}>
+                                    {formatWording(restartPending ? "party.restart.pending" : "party.btn.restart", {})}
+                                    <VscDebugRestart aria-hidden="true" />
+                                </button>
                             </div>
                         )}
 

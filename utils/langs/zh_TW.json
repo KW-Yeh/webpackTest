@@ -10,9 +10,13 @@
     "general.btn.partyMode": "派對模式",
     "general.btn.cancel": "取消",
     "general.btn.confirm": "確認",
+    "general.btn.back": "返回",
+    "general.btn.createRoom": "建立房間",
+    "general.btn.joinRoom": "加入房間",
     "general.default.score": "尚無紀錄",
     "general.clean.playingHistory": "清除紀錄",
     "general.goBack.menu": "回到選單",
+    "general.opening.modeTitle": "選擇遊戲模式",
     "general.opening.inputName.label": "名稱",
     "general.opening.inputRoom.label": "代碼",
     "general.default.playerName": "匿名玩家",
@@ -33,5 +37,10 @@
     "party.win.winner": "{name} 獲勝！",
     "party.win.steps": "使用了 {count} 回合",
     "party.win.draw": "平手！",
-    "party.btn.submit": "送出"
+    "party.btn.submit": "送出",
+    "party.btn.restart": "再來一局",
+    "party.restart.pending": "等待中...",
+    "party.status.restart.pending": "已送出再來一局請求，等待房主...",
+    "party.status.restart.requested": "{name} 想再來一局，正在準備新題目...",
+    "party.status.restart.accepted": "正在開始新一局..."
 }
