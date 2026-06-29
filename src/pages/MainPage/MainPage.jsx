@@ -194,7 +194,9 @@ const MainPage = () => {
             </button>
             <div className="rule-block"><InfoBlock text={RULES}/></div>
             <div className="input-block">
-                <input type="number"
+                <input type="text"
+                       inputMode="numeric"
+                       pattern="[0-9]*"
                        ref={inputRef}
                        value={num}
                        disabled={!inputEditable}

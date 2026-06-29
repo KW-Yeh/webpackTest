@@ -653,7 +653,9 @@ const PartyPage = () => {
                         {phase !== PHASE.WIN && (
                             <div className="party-input-block">
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
                                     value={myNum}
                                     disabled={phase !== PHASE.PLAYING}
                                     onChange={(e) => setMyNum(e.target.value.slice(0, 4))}
