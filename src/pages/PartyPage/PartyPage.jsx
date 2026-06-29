@@ -1,6 +1,6 @@
 import '../../css/party.scss';
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { shallowEqual, useSelector } from "react-redux";
+import { shallowEqual, useSelector, useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { FiArrowLeft } from "react-icons/fi";
 import { VscDebugRestart } from "react-icons/vsc";
@@ -12,6 +12,8 @@ import { createHostPeer, createGuestPeer, connectToHost } from "../../module/pee
 import DigitInputGroup from "../../component/DigitInputGroup/DigitInputGroup.jsx";
 import { env } from "../../../env.js";
 import { formatWording } from "../../../utils/langUtils";
+import { setUser } from "../../component/Player/userSlice";
+import { setRole, setRoom } from "./partyPageSlice";
 
 const logger = Logger({ className: "PartyPage" });
 
@@ -33,6 +35,22 @@ const HEARTBEAT_INTERVAL_MS = 5000;
 const HEARTBEAT_TIMEOUT_MS = 20000;
 const RECONNECT_GRACE_MS = 60000;
 const PARTY_SESSION_ID_KEY = 'bulls-cows-party-session-id';
+const PARTY_ROOM_KEY = 'bulls-cows-party-room';
+
+const savePartyRoom = (role, roomCode) => {
+    try { window.sessionStorage.setItem(PARTY_ROOM_KEY, JSON.stringify({ role, roomCode })); } catch { }
+};
+
+const loadPartyRoom = () => {
+    try {
+        const raw = window.sessionStorage.getItem(PARTY_ROOM_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+};
+
+const clearPartyRoom = () => {
+    try { window.sessionStorage.removeItem(PARTY_ROOM_KEY); } catch { }
+};
 
 const getPartySessionId = () => {
     const storedSessionId = window.localStorage.getItem(PARTY_SESSION_ID_KEY);
@@ -58,6 +76,7 @@ const createTarget = () => shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join(
 
 const PartyPage = () => {
     const navigate = useNavigate();
+    const dispatch = useDispatch();
     const userName = useSelector(state => state.userReducer.name, shallowEqual);
     const role = useSelector(state => state.partyPageReducer.role, shallowEqual);
     const roomID = useSelector(state => state.partyPageReducer.roomID, shallowEqual);
@@ -83,6 +102,7 @@ const PartyPage = () => {
     const connRef = useRef(null);
     const sessionIdRef = useRef(getPartySessionId());
     const peerSessionIdRef = useRef('');
+    const signalingReconnectAtRef = useRef(0);
     const phaseRef = useRef(PHASE.CONNECTING);
     const targetRef = useRef('');
     const stepRef = useRef(0);
@@ -278,6 +298,7 @@ const PartyPage = () => {
     }, [releaseConnectionResources, updatePhase]);
 
     const returnGuestToLobby = useCallback((notice = HOST_LEFT_NOTICE) => {
+        clearPartyRoom();
         window.sessionStorage.setItem('partyExitNotice', notice);
         releasePeerResources(false);
         navigate("/", { replace: true, state: { notice } });
@@ -604,28 +625,66 @@ const PartyPage = () => {
     }, [handleReconnectExpired, releasePeerResources, role, updatePhase]);
 
     const handleLeavePage = useCallback(() => {
+        clearPartyRoom();
         releasePeerResources(true);
         navigate("/", { state: { stage: "party_setup" } });
     }, [navigate, releasePeerResources]);
+
+    // Restore username from localStorage after page eviction (Redux state resets to defaults)
+    useEffect(() => {
+        const savedName = window.localStorage.getItem('playerName');
+        if (savedName) dispatch(setUser(savedName));
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         let destroyed = false;
 
         const init = async () => {
             try {
+                const savedRoom = loadPartyRoom();
+
+                // Detect guest page eviction: Redux reset role to 'host'/'' but session says guest
+                if (role === 'host' && !roomID && savedRoom?.role === 'guest' && savedRoom?.roomCode) {
+                    dispatch(setRole('guest'));
+                    dispatch(setRoom(savedRoom.roomCode));
+                    return; // Re-render with corrected state will re-trigger init as guest
+                }
+
                 if (role === 'host') {
                     suppressPeerIssueRef.current = false;
                     connectionIssueRef.current = false;
                     setConnectionIssue(false);
-                    const code = String(Math.floor(100000 + Math.random() * 900000));
+
+                    const codeToTry = savedRoom?.role === 'host' ? savedRoom.roomCode : null;
+                    const code = codeToTry || String(Math.floor(100000 + Math.random() * 900000));
+
                     setRoomCode(code);
                     setNotice(formatWording("party.status.waiting.opponent", {}));
 
-                    const peer = await createHostPeer(code);
+                    let peer;
+                    try {
+                        peer = await createHostPeer(code);
+                    } catch (e) {
+                        if (e.type === 'unavailable-id' && codeToTry) {
+                            // Saved peer ID still registered on signal server; clear session and retry with fresh code
+                            clearPartyRoom();
+                            if (!destroyed) setRetryKey(k => k + 1);
+                            return;
+                        }
+                        throw e;
+                    }
+
                     if (destroyed) { peer.destroy(); return; }
                     peerRef.current = peer;
+                    savePartyRoom('host', code);
                     peer.on('error', (error) => {
                         if (suppressPeerIssueRef.current) return;
+                        if (error.type === 'unavailable-id') {
+                            // Peer ID taken at runtime (e.g. during reconnect); reset session and retry
+                            clearPartyRoom();
+                            setRetryKey(k => k + 1);
+                            return;
+                        }
                         showConnectionIssue(CONNECTION_FAILED_NOTICE, error);
                     });
                     peer.on('disconnected', () => {
@@ -633,7 +692,16 @@ const PartyPage = () => {
                             suppressPeerIssueRef.current = false;
                             return;
                         }
-                        showConnectionIssue(CONNECTION_FAILED_NOTICE);
+                        const activePeer = peerRef.current;
+                        if (!activePeer || activePeer.destroyed) return;
+                        const now = Date.now();
+                        if (now - signalingReconnectAtRef.current < 15000) return;
+                        signalingReconnectAtRef.current = now;
+                        logger.info('PeerJS host signaling disconnected, reconnecting...');
+                        try { activePeer.reconnect(); } catch (err) {
+                            signalingReconnectAtRef.current = 0;
+                            showConnectionIssue(CONNECTION_FAILED_NOTICE, err);
+                        }
                     });
 
                     peer.on('connection', (conn) => {
@@ -646,6 +714,7 @@ const PartyPage = () => {
                     suppressPeerIssueRef.current = false;
                     connectionIssueRef.current = false;
                     setConnectionIssue(false);
+                    savePartyRoom('guest', roomID);
                     setNotice(formatWording("party.status.connecting", {}));
                     const peer = await createGuestPeer();
                     if (destroyed) { peer.destroy(); return; }
@@ -659,7 +728,16 @@ const PartyPage = () => {
                             suppressPeerIssueRef.current = false;
                             return;
                         }
-                        showConnectionIssue(CONNECTION_FAILED_NOTICE);
+                        const activePeer = peerRef.current;
+                        if (!activePeer || activePeer.destroyed) return;
+                        const now = Date.now();
+                        if (now - signalingReconnectAtRef.current < 15000) return;
+                        signalingReconnectAtRef.current = now;
+                        logger.info('PeerJS guest signaling disconnected, reconnecting...');
+                        try { activePeer.reconnect(); } catch (err) {
+                            signalingReconnectAtRef.current = 0;
+                            showConnectionIssue(CONNECTION_FAILED_NOTICE, err);
+                        }
                     });
 
                     const conn = connectToHost(peer, roomID);
@@ -682,7 +760,25 @@ const PartyPage = () => {
             destroyed = true;
             releasePeerResources(false, false);
         };
-    }, [releasePeerResources, retryKey, roomID, role, sendMsg, showConnectionIssue, startGame, updatePhase, userName, wireConn]);
+    }, [dispatch, releasePeerResources, retryKey, roomID, role, sendMsg, showConnectionIssue, startGame, updatePhase, userName, wireConn]);
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== 'visible') return;
+            const peer = peerRef.current;
+            if (!peer || !peer.disconnected || peer.destroyed) return;
+            const now = Date.now();
+            if (now - signalingReconnectAtRef.current < 15000) return;
+            signalingReconnectAtRef.current = now;
+            logger.info('Page became visible, reconnecting PeerJS signaling...');
+            try { peer.reconnect(); } catch (e) {
+                signalingReconnectAtRef.current = 0;
+                logger.error('PeerJS reconnect on visibility failed', e);
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, []);
 
     const compareAnswer = useCallback(() => {
         if (phase !== PHASE.PLAYING) return;
