@@ -173,13 +173,18 @@ const MainPage = () => {
         setTarget(shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join(''));
     }, []);
 
+    const handleRestartClick = useCallback(() => {
+        if (!window.confirm(formatWording("alert.restart.confirm", {}))) return;
+        newRound();
+    }, [newRound]);
+
     return(
         <div className="container-main">
             <Modal
                 portalTarget={document.body}
                 alertType="winning"
                 action={{
-                    confirm: () => newRound(),
+                    confirm: () => handleRestartClick(),
                     cancel: () => handleOverlayClick()
                 }}
                 isAlertVisible={isAlertVisible}/>
@@ -214,7 +219,7 @@ const MainPage = () => {
                     }
                 }}>{formatWording("general.clean.playingHistory", {})}</a>
             </div>
-            <div className="button-area"><RestartBtn onClick={() => newRound()} value={formatWording("general.restart", {})}/></div>
+            <div className="button-area"><RestartBtn onClick={() => handleRestartClick()} value={formatWording("general.restart", {})}/></div>
             <div className="notice-block"><Notice text={notice}/></div>
             <div className="record-block"><Record record={record}/></div>
         </div>
