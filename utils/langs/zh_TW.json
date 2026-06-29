@@ -31,6 +31,7 @@
     "party.status.connecting": "正在建立連線...",
     "party.status.waiting.opponent": "等待對方加入...",
     "party.status.waiting.answer": "等待對方送出...",
+    "party.status.peerSubmitted": "{name} 已作答，請送出你的答案。",
     "party.roomCode.label": "房間碼",
     "party.record.mine": "我的紀錄",
     "party.record.peer": "{name} 的紀錄",

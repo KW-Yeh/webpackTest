@@ -62,6 +62,7 @@ const PartyPage = () => {
     const [restartPending, setRestartPending] = useState(false);
     const [connectionIssue, setConnectionIssue] = useState(false);
     const [retryKey, setRetryKey] = useState(0);
+    const [peerHasSubmitted, setPeerHasSubmitted] = useState(false);
 
     const peerRef = useRef(null);
     const connRef = useRef(null);
@@ -192,6 +193,7 @@ const PartyPage = () => {
         setWinnerStep(0);
         setTarget('');
         setRestartPending(false);
+        setPeerHasSubmitted(false);
         updatePhase(PHASE.CONNECTING);
         setNotice(notice);
     }, [releaseConnectionResources, updatePhase]);
@@ -244,6 +246,7 @@ const PartyPage = () => {
         setPeerRecord([]);
         setWinner(null);
         setRestartPending(false);
+        setPeerHasSubmitted(false);
         connectionIssueRef.current = false;
         setConnectionIssue(false);
         updatePhase(PHASE.PLAYING);
@@ -312,15 +315,13 @@ const PartyPage = () => {
 
                 const myEntry = pendingSubmit.current;
                 if (!myEntry) {
-                    // Peer submitted first; store it and wait for my submission
                     pendingSubmit.current = { fromPeer: peerEntry };
+                    setPeerHasSubmitted(true);
                     break;
                 }
 
-                // Both submitted — reveal
                 const isMePeerPending = myEntry.fromPeer !== undefined;
                 if (isMePeerPending) {
-                    // This shouldn't happen in normal flow
                     break;
                 }
 
@@ -329,6 +330,7 @@ const PartyPage = () => {
                 setMyRecord(updatedMy);
                 setPeerRecord(updatedPeer);
                 pendingSubmit.current = null;
+                setPeerHasSubmitted(false);
 
                 const myWin = myEntry.a === 4;
                 const peerWin = peerEntry.a === 4;
@@ -368,6 +370,7 @@ const PartyPage = () => {
         const updatedPeer = [...peerRecordRef.current, peerEntry];
         setMyRecord(updatedMy);
         setPeerRecord(updatedPeer);
+        setPeerHasSubmitted(false);
 
         const myWin = myEntry.a === 4;
         const peerWin = peerEntry.a === 4;
@@ -530,11 +533,9 @@ const PartyPage = () => {
     useEffect(() => {
         const handlePageExit = () => releasePeerResources(true);
 
-        window.addEventListener('pagehide', handlePageExit);
         window.addEventListener('beforeunload', handlePageExit);
 
         return () => {
-            window.removeEventListener('pagehide', handlePageExit);
             window.removeEventListener('beforeunload', handlePageExit);
         };
     }, [releasePeerResources]);
@@ -632,6 +633,11 @@ const PartyPage = () => {
     );
 
     const isGamePhase = phase === PHASE.PLAYING || phase === PHASE.SUBMITTED || phase === PHASE.WIN;
+    const partyStatus = notice || (
+        phase === PHASE.PLAYING && peerHasSubmitted
+            ? formatWording("party.status.peerSubmitted", { name: peerName || '對方' })
+            : ''
+    );
 
     return (
         <div className="container-party">
@@ -666,8 +672,8 @@ const PartyPage = () => {
                             </div>
                         )}
 
-                        {phase === PHASE.SUBMITTED && (
-                            <div className="party-status">{notice}</div>
+                        {phase !== PHASE.WIN && partyStatus && (
+                            <div className="party-status">{partyStatus}</div>
                         )}
 
                         {phase === PHASE.WIN && (
