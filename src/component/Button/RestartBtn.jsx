@@ -5,7 +5,9 @@ const RestartBtn = (props) => {
     const onClick = props.onClick;
     const value = props.value;
     return (
-        <button onClick={onClick} id="Generate">{value} <VscDebugRestart style = {{transform: 'translateY(2px)'}}/></button>
+        <button type="button" className="restart-action-btn" onClick={onClick}>
+            {value} <VscDebugRestart aria-hidden="true" style={{transform: 'translateY(2px)'}}/>
+        </button>
     );
 };
 

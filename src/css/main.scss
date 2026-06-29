@@ -74,14 +74,14 @@
   text-align: center;
 }
 
-#Generate {
+.restart-action-btn {
   width: 100%;
   min-height: var(--apple-control-height);
   border-radius: var(--apple-radius-pill);
   padding: 0 22px;
-  background: var(--apple-primary);
-  border: 1px solid var(--apple-primary);
-  color: var(--apple-on-primary);
+  background: var(--apple-surface-pearl);
+  border: 1px solid var(--apple-hairline);
+  color: var(--apple-ink);
   cursor: pointer;
   display: inline-flex;
   align-items: center;

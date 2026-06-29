@@ -218,7 +218,11 @@ const MainPage = () => {
                     }
                 }}>{formatWording("general.clean.playingHistory", {})}</a>
             </div>
-            <div className="button-area"><RestartBtn onClick={() => handleRestartClick()} value={formatWording("general.restart", {})}/></div>
+            {isWin && (
+                <div className="button-area">
+                    <RestartBtn onClick={() => handleRestartClick()} value={formatWording("general.restart", {})}/>
+                </div>
+            )}
             <div className="notice-block"><Notice text={notice}/></div>
             <div className="record-block"><Record record={record}/></div>
         </div>

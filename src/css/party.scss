@@ -206,8 +206,9 @@
   min-width: 148px;
   padding: 0 22px;
   border-radius: var(--apple-radius-pill);
-  background: var(--apple-primary);
-  color: var(--apple-on-primary);
+  background: var(--apple-surface-pearl);
+  border: 1px solid var(--apple-hairline);
+  color: var(--apple-ink);
   font-size: 17px;
   line-height: 1.2;
   letter-spacing: 0;
