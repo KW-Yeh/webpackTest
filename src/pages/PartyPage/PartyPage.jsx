@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { shallowEqual, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { FiArrowLeft } from "react-icons/fi";
-import { GrReturn } from "react-icons/gr";
 import { VscDebugRestart } from "react-icons/vsc";
 
 import { Logger } from "../../module/logger";
@@ -825,7 +824,13 @@ const PartyPage = () => {
                                     onSubmit={compareAnswer}
                                     placeholder={formatWording("general.local.inputNumber.placeHolder", {})}
                                 />
-                                <i className="enter" onClick={compareAnswer}><GrReturn /></i>
+                                <button
+                                    type="button"
+                                    className="submit-answer-btn"
+                                    disabled={phase !== PHASE.PLAYING || !peerOnline}
+                                    onClick={compareAnswer}>
+                                    {formatWording("party.btn.submit", {})}
+                                </button>
                             </div>
                         )}
 

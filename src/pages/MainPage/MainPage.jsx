@@ -1,7 +1,6 @@
 import '../../css/main.scss';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDispatch } from "react-redux";
-import { GrReturn } from "react-icons/gr";
 import { FiArrowLeft } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 
@@ -197,7 +196,13 @@ const MainPage = () => {
                     onSubmit={compareAnswer}
                     placeholder={NUM_INPUT_PLACEHOLDER}
                 />
-                <i className="enter" onClick={compareAnswer}><GrReturn/></i>
+                <button
+                    type="button"
+                    className="submit-answer-btn"
+                    disabled={!inputEditable}
+                    onClick={compareAnswer}>
+                    {formatWording("party.btn.submit", {})}
+                </button>
             </div>
             <div className="currentHighestScore">
                 { formatWording("general.local.step", {count: highestScore, avg: averageScore? averageScore: formatWording("general.default.score", {})}) }

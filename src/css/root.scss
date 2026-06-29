@@ -154,3 +154,21 @@ input[type=number] {
   line-height: 1;
   letter-spacing: 0;
 }
+
+.submit-answer-btn {
+  flex: 0 0 auto;
+  min-width: 108px;
+  padding: 0 18px;
+  border-radius: var(--apple-radius-pill);
+  background: var(--apple-primary);
+  color: var(--apple-on-primary);
+  font-size: 17px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+@media (max-width: 640px) {
+  .submit-answer-btn {
+    width: 100%;
+  }
+}

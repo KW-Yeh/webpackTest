@@ -175,26 +175,6 @@
     flex: 1;
     min-width: 0;
   }
-
-  .enter {
-    width: var(--apple-control-height);
-    height: var(--apple-control-height);
-    flex: 0 0 var(--apple-control-height);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 20px;
-    color: var(--apple-primary);
-    background: var(--apple-surface-pearl);
-    border: 1px solid var(--apple-hairline);
-    border-radius: 50%;
-    transition: transform 160ms ease, background-color 160ms ease;
-
-    &:active {
-      transform: scale(0.95);
-    }
-  }
 }
 
 .party-win-panel {
@@ -400,6 +380,11 @@
 
   .party-game-area {
     padding: 18px;
+  }
+
+  .party-input-block {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .party-records {
