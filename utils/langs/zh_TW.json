@@ -32,6 +32,7 @@
     "party.status.waiting.opponent": "等待對方加入...",
     "party.status.waiting.answer": "等待對方送出...",
     "party.status.peerSubmitted": "{name} 已作答，請送出你的答案。",
+    "party.status.mySubmitted": "我已送出的答案",
     "party.roomCode.label": "房間碼",
     "party.record.mine": "我的紀錄",
     "party.record.peer": "{name} 的紀錄",
@@ -44,5 +45,8 @@
     "party.restart.pending": "等待中...",
     "party.status.restart.pending": "已送出再來一局請求，等待房主...",
     "party.status.restart.requested": "{name} 想再來一局，正在準備新題目...",
-    "party.status.restart.accepted": "正在開始新一局..."
+    "party.status.restart.accepted": "正在開始新一局...",
+    "party.status.reconnected": "已重新連線，遊戲狀態已同步。",
+    "party.connection.online": "玩家在線",
+    "party.connection.offline": "玩家離線"
 }

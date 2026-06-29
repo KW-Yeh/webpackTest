@@ -10,6 +10,7 @@ import { Logger } from "../../module/logger";
 import { checkInputs } from "../../module/checkInputs";
 import { shuffleArray } from "../../module/shuffleArray";
 import { createHostPeer, createGuestPeer, connectToHost } from "../../module/peer";
+import DigitInputGroup from "../../component/DigitInputGroup/DigitInputGroup.jsx";
 import { env } from "../../../env.js";
 import { formatWording } from "../../../utils/langUtils";
 
@@ -26,11 +27,24 @@ const PHASE = {
 const CONNECTION_TIMEOUT_MS = 20000;
 const CONNECTION_TIMEOUT_NOTICE = '連線逾時，請確認兩台裝置在同一個網路、手機沒有使用行動網路/VPN，並重新建立房間。';
 const CONNECTION_FAILED_NOTICE = '連線失敗，請重新建立房間後再試一次。';
-const CONNECTION_CLOSED_NOTICE = '對方已離線或連線已中斷。';
+const CONNECTION_CLOSED_NOTICE = '對方連線已中斷，等待 1 分鐘內重新連線...';
 const HOST_LEFT_NOTICE = '房主已離開，已回到遊戲大廳。';
 const GUEST_LEFT_NOTICE = '玩家已離開，等待新的玩家加入...';
 const HEARTBEAT_INTERVAL_MS = 5000;
 const HEARTBEAT_TIMEOUT_MS = 20000;
+const RECONNECT_GRACE_MS = 60000;
+const PARTY_SESSION_ID_KEY = 'bulls-cows-party-session-id';
+
+const getPartySessionId = () => {
+    const storedSessionId = window.localStorage.getItem(PARTY_SESSION_ID_KEY);
+    if (storedSessionId) return storedSessionId;
+
+    const sessionId = window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage.setItem(PARTY_SESSION_ID_KEY, sessionId);
+    return sessionId;
+};
 
 const calculateAB = (guess, target) => {
     let a = 0, b = 0;
@@ -63,15 +77,22 @@ const PartyPage = () => {
     const [connectionIssue, setConnectionIssue] = useState(false);
     const [retryKey, setRetryKey] = useState(0);
     const [peerHasSubmitted, setPeerHasSubmitted] = useState(false);
+    const [submittedGuessPreview, setSubmittedGuessPreview] = useState('');
+    const [peerOnline, setPeerOnline] = useState(false);
 
     const peerRef = useRef(null);
     const connRef = useRef(null);
+    const sessionIdRef = useRef(getPartySessionId());
+    const peerSessionIdRef = useRef('');
     const phaseRef = useRef(PHASE.CONNECTING);
     const targetRef = useRef('');
     const stepRef = useRef(0);
     const pendingSubmit = useRef(null);
     const myRecordRef = useRef([]);
     const peerRecordRef = useRef([]);
+    const peerNameRef = useRef('');
+    const winnerRef = useRef(null);
+    const winnerStepRef = useRef(0);
     const connectionTimerRef = useRef(null);
     const heartbeatIntervalRef = useRef(null);
     const heartbeatTimeoutRef = useRef(null);
@@ -79,6 +100,7 @@ const PartyPage = () => {
     const connectionIssueRef = useRef(false);
     const suppressCloseNoticeRef = useRef(false);
     const suppressPeerIssueRef = useRef(false);
+    const reconnectTimerRef = useRef(null);
 
     const updatePhase = useCallback((nextPhase) => {
         phaseRef.current = nextPhase;
@@ -96,6 +118,18 @@ const PartyPage = () => {
     useEffect(() => {
         peerRecordRef.current = peerRecord;
     }, [peerRecord]);
+
+    useEffect(() => {
+        peerNameRef.current = peerName;
+    }, [peerName]);
+
+    useEffect(() => {
+        winnerRef.current = winner;
+    }, [winner]);
+
+    useEffect(() => {
+        winnerStepRef.current = winnerStep;
+    }, [winnerStep]);
 
     useEffect(() => {
         connectionIssueRef.current = connectionIssue;
@@ -120,6 +154,13 @@ const PartyPage = () => {
         lastPongAtRef.current = 0;
     }, []);
 
+    const clearReconnectTimer = useCallback(() => {
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+    }, []);
+
     const showConnectionIssue = useCallback((notice, error) => {
         if (error) {
             logger.error(notice, error?.type || error?.message || error);
@@ -130,6 +171,7 @@ const PartyPage = () => {
             connectionIssueRef.current = true;
             setConnectionIssue(true);
         }
+        setPeerOnline(false);
         setNotice(notice);
     }, [role]);
 
@@ -143,17 +185,18 @@ const PartyPage = () => {
         }, CONNECTION_TIMEOUT_MS);
     }, [clearConnectionTimer, showConnectionIssue]);
 
-    const releaseConnectionResources = useCallback((suppressCloseNotice = true) => {
+    const releaseConnectionResources = useCallback((suppressCloseNotice = true, shouldClearReconnectTimer = true) => {
         clearConnectionTimer();
         clearHeartbeat();
+        if (shouldClearReconnectTimer) clearReconnectTimer();
         if (suppressCloseNotice) suppressCloseNoticeRef.current = true;
 
         const currentConn = connRef.current;
         connRef.current = null;
         currentConn?.close();
-    }, [clearConnectionTimer, clearHeartbeat]);
+    }, [clearConnectionTimer, clearHeartbeat, clearReconnectTimer]);
 
-    const releasePeerResources = useCallback((notifyPeer = false) => {
+    const releasePeerResources = useCallback((notifyPeer = false, shouldClearReconnectTimer = true) => {
         if (notifyPeer && connRef.current?.open) {
             try {
                 connRef.current.send({ type: 'party:leave', payload: { role, name: userName } });
@@ -162,7 +205,7 @@ const PartyPage = () => {
             }
         }
 
-        releaseConnectionResources();
+        releaseConnectionResources(true, shouldClearReconnectTimer);
 
         const currentPeer = peerRef.current;
         peerRef.current = null;
@@ -178,6 +221,41 @@ const PartyPage = () => {
         }
     }, []);
 
+    const createVisibleSnapshot = useCallback(() => ({
+        phase: phaseRef.current,
+        target: targetRef.current,
+        step: stepRef.current,
+        myRecord: myRecordRef.current,
+        peerRecord: peerRecordRef.current,
+        hostName: userName,
+        peerName: peerNameRef.current,
+        winner: winnerRef.current,
+        winnerStep: winnerStepRef.current,
+    }), [userName]);
+
+    const applyVisibleSnapshot = useCallback((snapshot) => {
+        if (!snapshot) return;
+
+        targetRef.current = snapshot.target || '';
+        stepRef.current = snapshot.step || 0;
+        pendingSubmit.current = null;
+        setTarget(snapshot.target || '');
+        setMyRecord(snapshot.peerRecord || []);
+        setPeerRecord(snapshot.myRecord || []);
+        setWinner(snapshot.winner === 'me' ? 'peer' : snapshot.winner === 'peer' ? 'me' : snapshot.winner);
+        setWinnerStep(snapshot.winnerStep || 0);
+        setPeerName((currentPeerName) => snapshot.hostName || currentPeerName);
+        setPeerHasSubmitted(false);
+        setSubmittedGuessPreview('');
+        setRestartPending(false);
+        connectionIssueRef.current = false;
+        setConnectionIssue(false);
+        clearReconnectTimer();
+        setPeerOnline(true);
+        updatePhase(snapshot.phase === PHASE.SUBMITTED ? PHASE.PLAYING : snapshot.phase);
+        setNotice(formatWording("party.status.reconnected", {}));
+    }, [clearReconnectTimer, updatePhase]);
+
     const resetHostToWaiting = useCallback((notice = GUEST_LEFT_NOTICE, suppressCloseNotice = true) => {
         releaseConnectionResources(suppressCloseNotice);
         targetRef.current = '';
@@ -185,6 +263,7 @@ const PartyPage = () => {
         pendingSubmit.current = null;
         connectionIssueRef.current = false;
         setConnectionIssue(false);
+        setPeerOnline(false);
         setPeerName('');
         setMyNum('');
         setMyRecord([]);
@@ -194,6 +273,7 @@ const PartyPage = () => {
         setTarget('');
         setRestartPending(false);
         setPeerHasSubmitted(false);
+        setSubmittedGuessPreview('');
         updatePhase(PHASE.CONNECTING);
         setNotice(notice);
     }, [releaseConnectionResources, updatePhase]);
@@ -203,6 +283,28 @@ const PartyPage = () => {
         releasePeerResources(false);
         navigate("/", { replace: true, state: { notice } });
     }, [navigate, releasePeerResources]);
+
+    const handleReconnectExpired = useCallback(() => {
+        reconnectTimerRef.current = null;
+        if (role === 'host') {
+            resetHostToWaiting(GUEST_LEFT_NOTICE);
+            return;
+        }
+        returnGuestToLobby(HOST_LEFT_NOTICE);
+    }, [resetHostToWaiting, returnGuestToLobby, role]);
+
+    const markPeerOffline = useCallback((notice = CONNECTION_CLOSED_NOTICE) => {
+        clearHeartbeat();
+        clearReconnectTimer();
+        connRef.current = null;
+        setPeerOnline(false);
+        if (role !== 'host') {
+            connectionIssueRef.current = true;
+            setConnectionIssue(true);
+        }
+        setNotice(notice);
+        reconnectTimerRef.current = setTimeout(handleReconnectExpired, RECONNECT_GRACE_MS);
+    }, [clearHeartbeat, clearReconnectTimer, handleReconnectExpired, role]);
 
     const startHostHeartbeat = useCallback(() => {
         clearHeartbeat();
@@ -214,7 +316,7 @@ const PartyPage = () => {
 
             if (Date.now() - lastPongAtRef.current > HEARTBEAT_TIMEOUT_MS) {
                 logger.error('Heartbeat timeout: guest did not respond');
-                resetHostToWaiting(GUEST_LEFT_NOTICE);
+                markPeerOffline(CONNECTION_CLOSED_NOTICE);
                 return;
             }
 
@@ -224,7 +326,7 @@ const PartyPage = () => {
                 logger.error('Heartbeat ping failed', e);
             }
         }, HEARTBEAT_INTERVAL_MS);
-    }, [clearHeartbeat, resetHostToWaiting]);
+    }, [clearHeartbeat, markPeerOffline]);
 
     const startGuestHeartbeat = useCallback(() => {
         if (heartbeatTimeoutRef.current) {
@@ -233,9 +335,9 @@ const PartyPage = () => {
 
         heartbeatTimeoutRef.current = setTimeout(() => {
             logger.error('Heartbeat timeout: host did not ping');
-            returnGuestToLobby(HOST_LEFT_NOTICE);
+            markPeerOffline(CONNECTION_CLOSED_NOTICE);
         }, HEARTBEAT_TIMEOUT_MS);
-    }, [returnGuestToLobby]);
+    }, [markPeerOffline]);
 
     const startGame = useCallback((conn, tgt) => {
         targetRef.current = tgt;
@@ -247,8 +349,10 @@ const PartyPage = () => {
         setWinner(null);
         setRestartPending(false);
         setPeerHasSubmitted(false);
+        setSubmittedGuessPreview('');
         connectionIssueRef.current = false;
         setConnectionIssue(false);
+        setPeerOnline(true);
         updatePhase(PHASE.PLAYING);
         setNotice('');
         logger.info(`Game started. Target: ${tgt}`);
@@ -268,11 +372,55 @@ const PartyPage = () => {
         switch (data.type) {
             case 'party:hello': {
                 setPeerName(data.payload.name);
+                setPeerOnline(true);
+                const peerSessionId = data.payload.sessionId || '';
+
+                if (role !== 'host') {
+                    peerSessionIdRef.current = peerSessionId;
+                    break;
+                }
+
+                const isReconnectWindowOpen = Boolean(reconnectTimerRef.current);
+                const isReconnect = peerSessionId
+                    && peerSessionIdRef.current
+                    && peerSessionIdRef.current === peerSessionId
+                    && isReconnectWindowOpen;
+
+                if (isReconnectWindowOpen && !isReconnect) {
+                    suppressCloseNoticeRef.current = true;
+                    const rejectedConn = connRef.current;
+                    connRef.current = null;
+                    rejectedConn?.close();
+                    break;
+                }
+
+                peerSessionIdRef.current = peerSessionId;
+                clearReconnectTimer();
+
+                if (isReconnect) {
+                    if (pendingSubmit.current?.fromPeer) {
+                        pendingSubmit.current = null;
+                        setPeerHasSubmitted(false);
+                    }
+                    sendMsg('party:sync', createVisibleSnapshot());
+                    setNotice(formatWording("party.status.reconnected", {}));
+                    break;
+                }
+
+                if (phaseRef.current === PHASE.CONNECTING || phaseRef.current === PHASE.WAITING_TARGET) {
+                    const tgt = createTarget();
+                    sendMsg('party:start', { target: tgt });
+                    startGame(connRef.current, tgt);
+                }
                 break;
             }
             case 'party:start': {
                 const tgt = data.payload.target;
                 startGame(connRef.current, tgt);
+                break;
+            }
+            case 'party:sync': {
+                applyVisibleSnapshot(data.payload);
                 break;
             }
             case 'party:request-restart': {
@@ -331,6 +479,7 @@ const PartyPage = () => {
                 setPeerRecord(updatedPeer);
                 pendingSubmit.current = null;
                 setPeerHasSubmitted(false);
+                setSubmittedGuessPreview('');
 
                 const myWin = myEntry.a === 4;
                 const peerWin = peerEntry.a === 4;
@@ -356,7 +505,7 @@ const PartyPage = () => {
             default:
                 logger.error('Unknown message type', data.type);
         }
-    }, [resetHostToWaiting, returnGuestToLobby, role, sendMsg, startGame, startGuestHeartbeat, updatePhase]);
+    }, [applyVisibleSnapshot, clearReconnectTimer, createVisibleSnapshot, resetHostToWaiting, returnGuestToLobby, role, sendMsg, startGame, startGuestHeartbeat, updatePhase]);
 
     // Handle the case where peer submitted BEFORE me (stored as fromPeer), then I submit
     const handleMySubmitWithPeerPending = useCallback((myEntry) => {
@@ -371,6 +520,7 @@ const PartyPage = () => {
         setMyRecord(updatedMy);
         setPeerRecord(updatedPeer);
         setPeerHasSubmitted(false);
+        setSubmittedGuessPreview('');
 
         const myWin = myEntry.a === 4;
         const peerWin = peerEntry.a === 4;
@@ -401,6 +551,7 @@ const PartyPage = () => {
             clearConnectionTimer();
             connectionIssueRef.current = false;
             setConnectionIssue(false);
+            setPeerOnline(true);
             logger.info('Connection opened');
             if (role === 'host') startHostHeartbeat();
             else startGuestHeartbeat();
@@ -418,32 +569,40 @@ const PartyPage = () => {
                 return;
             }
             if (connectionIssueRef.current) return;
-            if (role === 'host') {
-                resetHostToWaiting(GUEST_LEFT_NOTICE, false);
-            } else {
-                returnGuestToLobby(HOST_LEFT_NOTICE);
-            }
+            markPeerOffline(CONNECTION_CLOSED_NOTICE);
         });
         conn.peerConnection?.addEventListener('iceconnectionstatechange', () => {
             const state = conn.peerConnection?.iceConnectionState;
             logger.info(`ICE connection state: ${state}`);
-            if (state === 'failed' || state === 'disconnected') {
+            if (state === 'disconnected') {
+                markPeerOffline(CONNECTION_CLOSED_NOTICE);
+            } else if ((state === 'connected' || state === 'completed') && conn.open) {
+                connRef.current = conn;
+                clearReconnectTimer();
+                connectionIssueRef.current = false;
+                setConnectionIssue(false);
+                setPeerOnline(true);
+                setNotice('');
+                if (role === 'host') startHostHeartbeat();
+                else startGuestHeartbeat();
+            } else if (state === 'failed') {
                 showConnectionIssue(CONNECTION_FAILED_NOTICE);
             }
         });
-    }, [clearConnectionTimer, handleMessage, resetHostToWaiting, returnGuestToLobby, role, showConnectionIssue, startConnectionTimer, startGuestHeartbeat, startHostHeartbeat]);
+    }, [clearConnectionTimer, clearReconnectTimer, handleMessage, markPeerOffline, role, showConnectionIssue, startConnectionTimer, startGuestHeartbeat, startHostHeartbeat]);
 
     const handleRetryJoin = useCallback(() => {
         if (role === 'host') return;
 
-        releasePeerResources();
-        setPeerName('');
+        releasePeerResources(false, false);
         connectionIssueRef.current = false;
         setConnectionIssue(false);
+        setPeerOnline(false);
         setNotice(formatWording("party.status.connecting", {}));
         updatePhase(PHASE.CONNECTING);
+        reconnectTimerRef.current = setTimeout(handleReconnectExpired, RECONNECT_GRACE_MS);
         setRetryKey((key) => key + 1);
-    }, [releasePeerResources, role, updatePhase]);
+    }, [handleReconnectExpired, releasePeerResources, role, updatePhase]);
 
     const handleLeavePage = useCallback(() => {
         releasePeerResources(true);
@@ -481,11 +640,7 @@ const PartyPage = () => {
                     peer.on('connection', (conn) => {
                         wireConn(conn);
                         conn.on('open', () => {
-                            sendMsg('party:hello', { name: userName });
-                            // Generate and share target
-                            const tgt = createTarget();
-                            sendMsg('party:start', { target: tgt });
-                            startGame(conn, tgt);
+                            sendMsg('party:hello', { name: userName, sessionId: sessionIdRef.current });
                         });
                     });
                 } else {
@@ -513,7 +668,7 @@ const PartyPage = () => {
                     updatePhase(PHASE.WAITING_TARGET);
 
                     conn.on('open', () => {
-                        sendMsg('party:hello', { name: userName });
+                        sendMsg('party:hello', { name: userName, sessionId: sessionIdRef.current });
                         setNotice('');
                     });
                 }
@@ -526,31 +681,27 @@ const PartyPage = () => {
 
         return () => {
             destroyed = true;
-            releasePeerResources(true);
+            releasePeerResources(false, false);
         };
     }, [releasePeerResources, retryKey, roomID, role, sendMsg, showConnectionIssue, startGame, updatePhase, userName, wireConn]);
 
-    useEffect(() => {
-        const handlePageExit = () => releasePeerResources(true);
-
-        window.addEventListener('beforeunload', handlePageExit);
-
-        return () => {
-            window.removeEventListener('beforeunload', handlePageExit);
-        };
-    }, [releasePeerResources]);
-
     const compareAnswer = useCallback(() => {
         if (phase !== PHASE.PLAYING) return;
-        if (!checkInputs(myNum) || [...new Set(myNum)].length < 4 || myNum.length !== 4) {
+        if (!peerOnline) {
+            setNotice(CONNECTION_CLOSED_NOTICE);
+            return;
+        }
+
+        const guess = myNum.replace(/\D/g, '');
+        if (!checkInputs(guess) || [...new Set(guess)].length < 4 || guess.length !== 4) {
             setNotice(formatWording("error.invalid.inputNumber", {}));
             setTimeout(() => setNotice(''), 1500);
             return;
         }
 
         stepRef.current += 1;
-        const { a, b } = calculateAB(myNum, targetRef.current);
-        const myEntry = { guess: myNum, a, b, step: stepRef.current };
+        const { a, b } = calculateAB(guess, targetRef.current);
+        const myEntry = { guess, a, b, step: stepRef.current };
 
         // Check if peer already submitted this round (stored as fromPeer)
         const hadPeerPending = handleMySubmitWithPeerPending(myEntry);
@@ -558,11 +709,12 @@ const PartyPage = () => {
             pendingSubmit.current = myEntry;
             updatePhase(PHASE.SUBMITTED);
             setNotice(formatWording("party.status.waiting.answer", {}));
+            setSubmittedGuessPreview(guess);
         }
 
-        sendMsg('party:submit', { guess: myNum, a, b, step: stepRef.current });
+        sendMsg('party:submit', { guess, a, b, step: stepRef.current });
         setMyNum('');
-    }, [phase, myNum, sendMsg, handleMySubmitWithPeerPending, updatePhase]);
+    }, [phase, peerOnline, myNum, sendMsg, handleMySubmitWithPeerPending, updatePhase]);
 
     const handleRestartClick = useCallback(() => {
         if (phase !== PHASE.WIN || restartPending || role !== 'host') return;
@@ -648,7 +800,15 @@ const PartyPage = () => {
             <div className="party-header">
                 <span className="party-player-name">{userName}</span>
                 {peerName && <span className="party-vs"> vs </span>}
-                {peerName && <span className="party-peer-name">{peerName}</span>}
+                {peerName && (
+                    <span className="party-peer">
+                        <span className="party-peer-name">{peerName}</span>
+                        <span
+                            className={`party-peer-status ${peerOnline ? 'is-online' : 'is-offline'}`}
+                            aria-label={formatWording(peerOnline ? "party.connection.online" : "party.connection.offline", {})}
+                        />
+                    </span>
+                )}
             </div>
 
             {!isGamePhase && renderConnecting()}
@@ -658,14 +818,11 @@ const PartyPage = () => {
                     <div className="party-game-area">
                         {phase !== PHASE.WIN && (
                             <div className="party-input-block">
-                                <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
+                                <DigitInputGroup
                                     value={myNum}
-                                    disabled={phase !== PHASE.PLAYING}
-                                    onChange={(e) => setMyNum(e.target.value.slice(0, 4))}
-                                    onKeyUp={(e) => { if (e.key === 'Enter') compareAnswer(); }}
+                                    disabled={phase !== PHASE.PLAYING || !peerOnline}
+                                    onChange={setMyNum}
+                                    onSubmit={compareAnswer}
                                     placeholder={formatWording("general.local.inputNumber.placeHolder", {})}
                                 />
                                 <i className="enter" onClick={compareAnswer}><GrReturn /></i>
@@ -674,6 +831,20 @@ const PartyPage = () => {
 
                         {phase !== PHASE.WIN && partyStatus && (
                             <div className="party-status">{partyStatus}</div>
+                        )}
+
+                        {phase !== PHASE.WIN && role !== 'host' && !peerOnline && connectionIssue && (
+                            <div className="party-connection-actions party-connection-actions-inline">
+                                <button type="button" className="party-retry-btn" onClick={handleRetryJoin}>
+                                    再次嘗試
+                                </button>
+                            </div>
+                        )}
+
+                        {phase === PHASE.SUBMITTED && submittedGuessPreview && (
+                            <div className="party-submitted-preview" aria-label={formatWording("party.status.mySubmitted", {})}>
+                                {submittedGuessPreview.split('').join(' ')}
+                            </div>
                         )}
 
                         {phase === PHASE.WIN && (

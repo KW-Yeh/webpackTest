@@ -24,6 +24,28 @@
   color: var(--apple-primary);
 }
 
+.party-peer {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.party-peer-status {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--apple-canvas);
+
+  &.is-online {
+    background: #30d158;
+  }
+
+  &.is-offline {
+    background: #ff453a;
+  }
+}
+
 .party-vs {
   margin: 0 8px;
   color: var(--apple-muted);
@@ -76,11 +98,29 @@
   text-align: center;
 }
 
+.party-submitted-preview {
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: var(--apple-radius-pill);
+  background: var(--apple-canvas-parchment);
+  color: var(--apple-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  letter-spacing: 2px;
+  opacity: 0.72;
+}
+
 .party-connection-actions {
   display: flex;
   flex-direction: row;
   gap: 12px;
   width: min(100%, 360px);
+}
+
+.party-connection-actions-inline {
+  align-self: center;
+  width: min(100%, 220px);
 }
 
 .party-retry-btn,
@@ -131,7 +171,7 @@
   align-items: center;
   gap: 8px;
 
-  input[type=number] {
+  .digit-input-group {
     flex: 1;
     min-width: 0;
   }

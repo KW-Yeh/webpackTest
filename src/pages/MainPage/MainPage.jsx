@@ -12,6 +12,7 @@ import Notice from "../../component/Notice/Notice.jsx";
 import InfoBlock from "../../component/InfoBlock/InfoBlock.jsx";
 import Modal from "../../component/Modal/Modal.jsx";
 import RestartBtn from "../../component/Button/RestartBtn.jsx";
+import DigitInputGroup from "../../component/DigitInputGroup/DigitInputGroup.jsx";
 
 import { Storage } from "../../module/storage";
 import { Logger } from "../../module/logger";
@@ -55,7 +56,6 @@ const MainPage = () => {
 
     const count = useRef(initStep);
     const isMounted = useRef(false);
-    const inputRef = useRef(null);
 
     useEffect(() => {
         if (isMounted.current) {
@@ -114,10 +114,6 @@ const MainPage = () => {
         if (timeout) setTimeout(() => setNotice(''), timeout);
     };
 
-    const handleNumInput = (event) => {
-        setNum(event.target.value.slice(0, 4));
-    };
-
     const resetStates = () => {
         logger.info("Reset states");
         setNotice("");
@@ -144,13 +140,14 @@ const MainPage = () => {
     const compareAnswer = () => {
         if (isWin) return;
         logger.info("Compare answer");
-        if (!checkInputs(num) || [...new Set(num)].length < 4) {
+        const guess = num.replace(/\D/g, '');
+        if (!checkInputs(guess) || [...new Set(guess)].length < 4 || guess.length !== 4) {
             logger.info("Invalid input");
             noticeWording(formatWording("error.invalid.inputNumber", {}), 1500);
         } else {
             count.current++;
-            const {a, b} = calculateAB(num);
-            const _res = `${num.split('').join(' ')}:${a} A ${b} B`;
+            const {a, b} = calculateAB(guess);
+            const _res = `${guess.split('').join(' ')}:${a} A ${b} B`;
             setRecord([...record, _res]);
             logger.verbose(`Current result ${_res}`);
 
@@ -161,7 +158,6 @@ const MainPage = () => {
             }
         }
         setNum("");
-        inputRef.current.focus();
     };
 
     const handleOverlayClick = useCallback(() => {
@@ -194,17 +190,13 @@ const MainPage = () => {
             </button>
             <div className="rule-block"><InfoBlock text={RULES}/></div>
             <div className="input-block">
-                <input type="text"
-                       inputMode="numeric"
-                       pattern="[0-9]*"
-                       ref={inputRef}
-                       value={num}
-                       disabled={!inputEditable}
-                       onChange={handleNumInput}
-                       onKeyUp={(event) => {
-                           if (event.key === 'Enter') compareAnswer();
-                       }}
-                       placeholder={NUM_INPUT_PLACEHOLDER} />
+                <DigitInputGroup
+                    value={num}
+                    disabled={!inputEditable}
+                    onChange={setNum}
+                    onSubmit={compareAnswer}
+                    placeholder={NUM_INPUT_PLACEHOLDER}
+                />
                 <i className="enter" onClick={compareAnswer}><GrReturn/></i>
             </div>
             <div className="currentHighestScore">
