@@ -273,16 +273,7 @@ const PartyPage = () => {
                 break;
             }
             case 'party:request-restart': {
-                if (role !== 'host' || phaseRef.current !== PHASE.WIN) {
-                    logger.info('Ignored restart request outside win phase');
-                    break;
-                }
-
-                const requestedName = data.payload && data.payload.name
-                    ? data.payload.name
-                    : formatWording("general.default.playerName", {});
-                setNotice(formatWording("party.status.restart.requested", { name: requestedName }));
-                restartGameAsHost(requestedName);
+                logger.info('Ignored restart request: only host can restart');
                 break;
             }
             case 'party:restart': {
@@ -363,7 +354,7 @@ const PartyPage = () => {
             default:
                 logger.error('Unknown message type', data.type);
         }
-    }, [resetHostToWaiting, restartGameAsHost, returnGuestToLobby, role, sendMsg, startGame, startGuestHeartbeat, updatePhase]);
+    }, [resetHostToWaiting, returnGuestToLobby, role, sendMsg, startGame, startGuestHeartbeat, updatePhase]);
 
     // Handle the case where peer submitted BEFORE me (stored as fromPeer), then I submit
     const handleMySubmitWithPeerPending = useCallback((myEntry) => {
@@ -573,17 +564,11 @@ const PartyPage = () => {
     }, [phase, myNum, sendMsg, handleMySubmitWithPeerPending, updatePhase]);
 
     const handleRestartClick = useCallback(() => {
-        if (phase !== PHASE.WIN || restartPending) return;
+        if (phase !== PHASE.WIN || restartPending || role !== 'host') return;
+        if (!window.confirm(formatWording("alert.restart.confirm", {}))) return;
 
-        if (role === 'host') {
-            restartGameAsHost(userName);
-            return;
-        }
-
-        setRestartPending(true);
-        setNotice(formatWording("party.status.restart.pending", {}));
-        sendMsg('party:request-restart', { name: userName });
-    }, [phase, restartPending, restartGameAsHost, role, sendMsg, userName]);
+        restartGameAsHost(userName);
+    }, [phase, restartPending, restartGameAsHost, role, userName]);
 
     const renderRecord = (record, label) => (
         <div className="party-record-column">
@@ -668,7 +653,9 @@ const PartyPage = () => {
                         {phase !== PHASE.WIN && (
                             <div className="party-input-block">
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
                                     value={myNum}
                                     disabled={phase !== PHASE.PLAYING}
                                     onChange={(e) => setMyNum(e.target.value.slice(0, 4))}
@@ -693,14 +680,16 @@ const PartyPage = () => {
                                         })
                                     }
                                 </div>
-                                <button
-                                    type="button"
-                                    className="party-restart-btn"
-                                    disabled={restartPending}
-                                    onClick={handleRestartClick}>
-                                    {formatWording(restartPending ? "party.restart.pending" : "party.btn.restart", {})}
-                                    <VscDebugRestart aria-hidden="true" />
-                                </button>
+                                {role === 'host' && (
+                                    <button
+                                        type="button"
+                                        className="party-restart-btn"
+                                        disabled={restartPending}
+                                        onClick={handleRestartClick}>
+                                        {formatWording(restartPending ? "party.restart.pending" : "party.btn.restart", {})}
+                                        <VscDebugRestart aria-hidden="true" />
+                                    </button>
+                                )}
                             </div>
                         )}
 

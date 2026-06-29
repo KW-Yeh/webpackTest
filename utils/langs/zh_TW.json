@@ -20,6 +20,7 @@
     "general.opening.inputName.label": "名稱",
     "general.opening.inputRoom.label": "代碼",
     "general.default.playerName": "匿名玩家",
+    "alert.restart.confirm": "確定要重新開始嗎？目前進度會被清除。",
     "alert.local.clean.playingHistory": "確定要清除遊玩紀錄?",
     "error.invalid.inputNumber": "請輸入 4 個'不重複'的數字",
     "error.invalid.inputRoom": "請輸入有效的數字房間碼",
