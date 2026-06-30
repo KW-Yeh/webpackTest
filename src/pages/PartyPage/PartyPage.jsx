@@ -35,6 +35,7 @@ const GUEST_LEFT_NOTICE = '玩家已離開，等待新的玩家加入...';
 const HEARTBEAT_INTERVAL_MS = 5000;
 const HEARTBEAT_TIMEOUT_MS = 20000;
 const RECONNECT_GRACE_MS = 60000;
+const HOST_PEER_RETRY_MS = 3000;
 const PARTY_SESSION_ID_KEY = 'bulls-cows-party-session-id';
 const PARTY_ROOM_KEY = 'bulls-cows-party-room';
 
@@ -122,6 +123,7 @@ const PartyPage = () => {
     const suppressCloseNoticeRef = useRef(false);
     const suppressPeerIssueRef = useRef(false);
     const reconnectTimerRef = useRef(null);
+    const hostPeerRetryTimerRef = useRef(null);
     const copyNoticeTimerRef = useRef(null);
     const inviteLink = roomCode
         ? `${window.location.origin}${window.location.pathname}#/party?room=${encodeURIComponent(roomCode)}`
@@ -186,6 +188,13 @@ const PartyPage = () => {
         }
     }, []);
 
+    const clearHostPeerRetryTimer = useCallback(() => {
+        if (hostPeerRetryTimerRef.current) {
+            clearTimeout(hostPeerRetryTimerRef.current);
+            hostPeerRetryTimerRef.current = null;
+        }
+    }, []);
+
     const clearCopyNoticeTimer = useCallback(() => {
         if (copyNoticeTimerRef.current) {
             clearTimeout(copyNoticeTimerRef.current);
@@ -198,6 +207,16 @@ const PartyPage = () => {
         && !connRef.current?.open
         && (phaseRef.current === PHASE.CONNECTING || phaseRef.current === PHASE.WAITING_TARGET)
     ), [role]);
+
+    const scheduleHostPeerRetry = useCallback(() => {
+        if (!isHostWaitingForGuest()) return;
+
+        clearHostPeerRetryTimer();
+        hostPeerRetryTimerRef.current = setTimeout(() => {
+            hostPeerRetryTimerRef.current = null;
+            if (isHostWaitingForGuest()) setRetryKey((key) => key + 1);
+        }, HOST_PEER_RETRY_MS);
+    }, [clearHostPeerRetryTimer, isHostWaitingForGuest]);
 
     const reconnectHostPeerInBackground = useCallback((error) => {
         if (!isHostWaitingForGuest()) return false;
@@ -213,7 +232,15 @@ const PartyPage = () => {
 
         const activePeer = peerRef.current;
         if (!activePeer || activePeer.destroyed) {
-            setRetryKey((key) => key + 1);
+            scheduleHostPeerRetry();
+            return true;
+        }
+
+        if (error?.type === 'unavailable-id') {
+            suppressPeerIssueRef.current = true;
+            activePeer.destroy();
+            peerRef.current = null;
+            scheduleHostPeerRetry();
             return true;
         }
 
@@ -227,12 +254,12 @@ const PartyPage = () => {
             } catch (err) {
                 signalingReconnectAtRef.current = 0;
                 logger.error('Background host peer reconnect failed', err);
-                setRetryKey((key) => key + 1);
+                scheduleHostPeerRetry();
             }
         }
 
         return true;
-    }, [isHostWaitingForGuest]);
+    }, [isHostWaitingForGuest, scheduleHostPeerRetry]);
 
     const showConnectionIssue = useCallback((notice, error) => {
         if (reconnectHostPeerInBackground(error)) return;
@@ -272,6 +299,8 @@ const PartyPage = () => {
     }, [clearConnectionTimer, clearHeartbeat, clearReconnectTimer]);
 
     const releasePeerResources = useCallback((notifyPeer = false, shouldClearReconnectTimer = true) => {
+        clearHostPeerRetryTimer();
+
         if (notifyPeer && connRef.current?.open) {
             try {
                 connRef.current.send({ type: 'party:leave', payload: { role, name: userName } });
@@ -286,7 +315,7 @@ const PartyPage = () => {
         peerRef.current = null;
         suppressPeerIssueRef.current = true;
         currentPeer?.destroy();
-    }, [releaseConnectionResources, role, userName]);
+    }, [clearHostPeerRetryTimer, releaseConnectionResources, role, userName]);
 
     const sendMsg = useCallback((type, payload) => {
         try {
@@ -751,9 +780,7 @@ const PartyPage = () => {
                         peer = await createHostPeer(code);
                     } catch (e) {
                         if (e.type === 'unavailable-id' && codeToTry) {
-                            // Saved peer ID still registered on signal server; clear session and retry with fresh code
-                            clearPartyRoom();
-                            if (!destroyed) setRetryKey(k => k + 1);
+                            if (!destroyed) scheduleHostPeerRetry();
                             return;
                         }
                         throw e;
@@ -765,10 +792,7 @@ const PartyPage = () => {
                     peer.on('error', (error) => {
                         if (suppressPeerIssueRef.current) return;
                         if (error.type === 'unavailable-id') {
-                            // Peer ID taken at runtime (e.g. during reconnect); reset session and retry
-                            clearPartyRoom();
-                            setRetryKey(k => k + 1);
-                            return;
+                            if (reconnectHostPeerInBackground(error)) return;
                         }
                         showConnectionIssue(CONNECTION_FAILED_NOTICE, error);
                     });
@@ -845,7 +869,7 @@ const PartyPage = () => {
             destroyed = true;
             releasePeerResources(false, false);
         };
-    }, [dispatch, releasePeerResources, retryKey, roomID, role, sendMsg, showConnectionIssue, startGame, updatePhase, userName, wireConn]);
+    }, [dispatch, reconnectHostPeerInBackground, releasePeerResources, retryKey, roomID, role, scheduleHostPeerRetry, sendMsg, showConnectionIssue, startGame, updatePhase, userName, wireConn]);
 
     useEffect(() => clearCopyNoticeTimer, [clearCopyNoticeTimer]);
 
@@ -853,6 +877,10 @@ const PartyPage = () => {
         const handleVisibilityChange = () => {
             if (document.visibilityState !== 'visible') return;
             const peer = peerRef.current;
+            if (isHostWaitingForGuest() && (!peer || peer.destroyed)) {
+                scheduleHostPeerRetry();
+                return;
+            }
             if (!peer || !peer.disconnected || peer.destroyed) return;
             const now = Date.now();
             if (now - signalingReconnectAtRef.current < 15000) return;
@@ -865,7 +893,7 @@ const PartyPage = () => {
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, []);
+    }, [isHostWaitingForGuest, scheduleHostPeerRetry]);
 
     const compareAnswer = useCallback(() => {
         if (phase !== PHASE.PLAYING) return;
