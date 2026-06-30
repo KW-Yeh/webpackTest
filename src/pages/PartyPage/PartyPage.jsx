@@ -1,8 +1,9 @@
 import '../../css/party.scss';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { shallowEqual, useSelector, useDispatch } from "react-redux";
-import { useNavigate } from "react-router-dom";
-import { FiArrowLeft } from "react-icons/fi";
+import { useLocation, useNavigate } from "react-router-dom";
+import { QRCodeSVG } from "qrcode.react";
+import { FiArrowLeft, FiCheck, FiCopy } from "react-icons/fi";
 import { VscDebugRestart } from "react-icons/vsc";
 
 import { Logger } from "../../module/logger";
@@ -36,6 +37,7 @@ const HEARTBEAT_TIMEOUT_MS = 20000;
 const RECONNECT_GRACE_MS = 60000;
 const PARTY_SESSION_ID_KEY = 'bulls-cows-party-session-id';
 const PARTY_ROOM_KEY = 'bulls-cows-party-room';
+const ROOM_CODE_PATTERN = /^\d{6}$/;
 
 const savePartyRoom = (role, roomCode) => {
     try { window.sessionStorage.setItem(PARTY_ROOM_KEY, JSON.stringify({ role, roomCode })); } catch { }
@@ -76,6 +78,7 @@ const createTarget = () => shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join(
 
 const PartyPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const dispatch = useDispatch();
     const userName = useSelector(state => state.userReducer.name, shallowEqual);
     const role = useSelector(state => state.partyPageReducer.role, shallowEqual);
@@ -97,6 +100,7 @@ const PartyPage = () => {
     const [peerHasSubmitted, setPeerHasSubmitted] = useState(false);
     const [submittedGuessPreview, setSubmittedGuessPreview] = useState('');
     const [peerOnline, setPeerOnline] = useState(false);
+    const [inviteCopied, setInviteCopied] = useState(false);
 
     const peerRef = useRef(null);
     const connRef = useRef(null);
@@ -120,6 +124,11 @@ const PartyPage = () => {
     const suppressCloseNoticeRef = useRef(false);
     const suppressPeerIssueRef = useRef(false);
     const reconnectTimerRef = useRef(null);
+    const copyNoticeTimerRef = useRef(null);
+    const inviteRoomCode = new URLSearchParams(location.search).get('room')?.trim() || '';
+    const inviteLink = roomCode
+        ? `${window.location.origin}${window.location.pathname}#/party?room=${encodeURIComponent(roomCode)}`
+        : '';
 
     const updatePhase = useCallback((nextPhase) => {
         phaseRef.current = nextPhase;
@@ -154,6 +163,19 @@ const PartyPage = () => {
         connectionIssueRef.current = connectionIssue;
     }, [connectionIssue]);
 
+    useEffect(() => {
+        if (!inviteRoomCode) return;
+
+        navigate("/", {
+            replace: true,
+            state: {
+                stage: "party_setup",
+                roomID: inviteRoomCode,
+                notice: ROOM_CODE_PATTERN.test(inviteRoomCode) ? "" : formatWording("error.invalid.inputRoom", {}),
+            },
+        });
+    }, [inviteRoomCode, navigate]);
+
     const clearConnectionTimer = useCallback(() => {
         if (connectionTimerRef.current) {
             clearTimeout(connectionTimerRef.current);
@@ -177,6 +199,13 @@ const PartyPage = () => {
         if (reconnectTimerRef.current) {
             clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = null;
+        }
+    }, []);
+
+    const clearCopyNoticeTimer = useCallback(() => {
+        if (copyNoticeTimerRef.current) {
+            clearTimeout(copyNoticeTimerRef.current);
+            copyNoticeTimerRef.current = null;
         }
     }, []);
 
@@ -630,6 +659,33 @@ const PartyPage = () => {
         navigate("/", { state: { stage: "party_setup" } });
     }, [navigate, releasePeerResources]);
 
+    const handleCopyInviteLink = useCallback(async () => {
+        if (!inviteLink) return;
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(inviteLink);
+            } else {
+                const textArea = document.createElement('textarea');
+                textArea.value = inviteLink;
+                textArea.setAttribute('readonly', '');
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+            setInviteCopied(true);
+            clearCopyNoticeTimer();
+            copyNoticeTimerRef.current = setTimeout(() => setInviteCopied(false), 1500);
+        } catch (e) {
+            logger.error('Copy invite link failed', e);
+            setNotice(formatWording("party.invite.copyFailed", {}));
+            setTimeout(() => setNotice(''), 1500);
+        }
+    }, [clearCopyNoticeTimer, inviteLink]);
+
     // Restore username from localStorage after page eviction (Redux state resets to defaults)
     useEffect(() => {
         const savedName = window.localStorage.getItem('playerName');
@@ -640,6 +696,8 @@ const PartyPage = () => {
         let destroyed = false;
 
         const init = async () => {
+            if (inviteRoomCode) return;
+
             try {
                 const savedRoom = loadPartyRoom();
 
@@ -760,7 +818,9 @@ const PartyPage = () => {
             destroyed = true;
             releasePeerResources(false, false);
         };
-    }, [dispatch, releasePeerResources, retryKey, roomID, role, sendMsg, showConnectionIssue, startGame, updatePhase, userName, wireConn]);
+    }, [dispatch, inviteRoomCode, releasePeerResources, retryKey, roomID, role, sendMsg, showConnectionIssue, startGame, updatePhase, userName, wireConn]);
+
+    useEffect(() => clearCopyNoticeTimer, [clearCopyNoticeTimer]);
 
     useEffect(() => {
         const handleVisibilityChange = () => {
@@ -860,6 +920,26 @@ const PartyPage = () => {
                 <div className="party-room-code-block">
                     <div className="party-room-code-label">{formatWording("party.roomCode.label", {})}</div>
                     <div className="party-room-code">{roomCode}</div>
+                    {inviteLink && (
+                        <div className="party-invite-block">
+                            <QRCodeSVG
+                                value={inviteLink}
+                                size={156}
+                                bgColor="#ffffff"
+                                fgColor="#1d1d1f"
+                                level="M"
+                                marginSize={2}
+                                className="party-invite-qr"
+                            />
+                            <div className="party-invite-link" title={inviteLink}>{inviteLink}</div>
+                            <button type="button" className="party-copy-link-btn" onClick={handleCopyInviteLink}>
+                                {inviteCopied ? <FiCheck aria-hidden="true" /> : <FiCopy aria-hidden="true" />}
+                                <span>
+                                    {formatWording(inviteCopied ? "party.invite.copied" : "party.invite.copyLink", {})}
+                                </span>
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
             <div className="party-status">{notice}</div>

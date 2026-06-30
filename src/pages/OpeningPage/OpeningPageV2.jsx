@@ -23,6 +23,7 @@ const OPENING_STAGE = {
     SELECT_MODE: 'select_mode',
     PARTY_SETUP: 'party_setup',
 };
+const ROOM_CODE_PATTERN = /^\d{6}$/;
 
 const OpeningPageV2 = () => {
     const navigate = useNavigate();
@@ -32,13 +33,14 @@ const OpeningPageV2 = () => {
     const playerName = storage.getStorage(env.LOCAL.STORAGE.PLAYER_NAME);
     const initUserName = playerName && playerName !== "" ? playerName : "";
 
+    const initialRoomID = location.state?.roomID || "";
     const [stage, setStage] = useState(
-        location.state?.stage === OPENING_STAGE.PARTY_SETUP
+        location.state?.stage === OPENING_STAGE.PARTY_SETUP || initialRoomID
             ? OPENING_STAGE.PARTY_SETUP
             : OPENING_STAGE.SELECT_MODE
     );
     const [userName, setUserName] = useState(initUserName);
-    const [id, setId] = useState("");
+    const [id, setId] = useState(initialRoomID);
     const [wording, setWording] = useState(() => {
         const storedNotice = window.sessionStorage.getItem('partyExitNotice') || "";
         if (storedNotice) window.sessionStorage.removeItem('partyExitNotice');
@@ -77,7 +79,7 @@ const OpeningPageV2 = () => {
         logger.success(`Join party room!`);
         const roomID = id.trim();
 
-        if (roomID === "" || !checkInputs(roomID)) {
+        if (!ROOM_CODE_PATTERN.test(roomID) || !checkInputs(roomID)) {
             noticeWording(formatWording("error.invalid.inputRoom", {}), 1500);
             return;
         }
@@ -151,6 +153,8 @@ const OpeningPageV2 = () => {
                         onChange={(event) => setId(event.target.value.slice(0, 6))}
                         onKeyUp={(event) => { if (event.key === 'Enter') handleJoinRoomClick(); }}
                         placeholder={formatWording("general.opening.inputRoom.placeHolder", {})}
+                        maxLength={6}
+                        aria-invalid={id !== "" && !ROOM_CODE_PATTERN.test(id)}
                     />
                 </label>
                 {wording && <div className="wording" role="status">{wording}</div>}
