@@ -209,7 +209,50 @@ const PartyPage = () => {
         }
     }, []);
 
+    const isHostWaitingForGuest = useCallback(() => (
+        role === 'host'
+        && !connRef.current?.open
+        && (phaseRef.current === PHASE.CONNECTING || phaseRef.current === PHASE.WAITING_TARGET)
+    ), [role]);
+
+    const reconnectHostPeerInBackground = useCallback((error) => {
+        if (!isHostWaitingForGuest()) return false;
+
+        if (error) {
+            logger.info('Host peer issue while waiting for guest; keeping room open in background', error?.type || error?.message || error);
+        }
+
+        connectionIssueRef.current = false;
+        setConnectionIssue(false);
+        setPeerOnline(false);
+        setNotice(formatWording("party.status.waiting.opponent", {}));
+
+        const activePeer = peerRef.current;
+        if (!activePeer || activePeer.destroyed) {
+            setRetryKey((key) => key + 1);
+            return true;
+        }
+
+        const now = Date.now();
+        if (now - signalingReconnectAtRef.current < 15000) return true;
+        signalingReconnectAtRef.current = now;
+
+        if (activePeer.disconnected) {
+            try {
+                activePeer.reconnect();
+            } catch (err) {
+                signalingReconnectAtRef.current = 0;
+                logger.error('Background host peer reconnect failed', err);
+                setRetryKey((key) => key + 1);
+            }
+        }
+
+        return true;
+    }, [isHostWaitingForGuest]);
+
     const showConnectionIssue = useCallback((notice, error) => {
+        if (reconnectHostPeerInBackground(error)) return;
+
         if (error) {
             logger.error(notice, error?.type || error?.message || error);
         } else {
@@ -221,7 +264,7 @@ const PartyPage = () => {
         }
         setPeerOnline(false);
         setNotice(notice);
-    }, [role]);
+    }, [reconnectHostPeerInBackground, role]);
 
     const startConnectionTimer = useCallback(() => {
         clearConnectionTimer();
