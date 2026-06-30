@@ -90,6 +90,54 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.party-invite-block {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+}
+
+.party-invite-qr {
+  align-self: center;
+  width: 156px;
+  height: 156px;
+  padding: 6px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-canvas);
+}
+
+.party-invite-link {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-canvas-parchment);
+  color: var(--apple-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  word-break: break-all;
+}
+
+.party-copy-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-radius: var(--apple-radius-pill);
+  background: var(--apple-primary);
+  color: var(--apple-on-primary);
+  font-size: 15px;
+  line-height: 1.2;
+
+  svg {
+    flex: 0 0 auto;
+    font-size: 17px;
+  }
+}
+
 .party-status {
   min-height: 22px;
   font-size: 14px;
