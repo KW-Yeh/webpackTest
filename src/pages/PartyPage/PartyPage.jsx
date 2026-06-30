@@ -529,6 +529,7 @@ const PartyPage = () => {
                 pendingSubmit.current = null;
                 setPeerHasSubmitted(false);
                 setSubmittedGuessPreview('');
+                setNotice('');
 
                 const myWin = myEntry.a === 4;
                 const peerWin = peerEntry.a === 4;
@@ -570,6 +571,7 @@ const PartyPage = () => {
         setPeerRecord(updatedPeer);
         setPeerHasSubmitted(false);
         setSubmittedGuessPreview('');
+        setNotice('');
 
         const myWin = myEntry.a === 4;
         const peerWin = peerEntry.a === 4;
