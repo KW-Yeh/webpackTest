@@ -107,12 +107,12 @@ const OpeningPageV2 = () => {
             {wording && <div className="wording" role="status">{wording}</div>}
             <div className="mode-options">
                 <button type="button" className="mode-option mode-option-local" onClick={handleLocalBtnClick}>
-                    <span>{formatWording("general.btn.localMode", {})}</span>
                     <VscDebugDisconnect aria-hidden="true" />
+                    <span>{formatWording("general.btn.localMode", {})}</span>
                 </button>
                 <button type="button" className="mode-option mode-option-party" onClick={() => setStage(OPENING_STAGE.PARTY_SETUP)}>
-                    <span>{formatWording("general.btn.partyMode", {})}</span>
                     <FiLink aria-hidden="true" />
+                    <span>{formatWording("general.btn.partyMode", {})}</span>
                 </button>
             </div>
         </div>
@@ -160,12 +160,12 @@ const OpeningPageV2 = () => {
                 {wording && <div className="wording" role="status">{wording}</div>}
                 <div className="party-action-row">
                     <button type="button" className="party-action party-action-join" onClick={handleJoinRoomClick}>
-                        <span>{formatWording("general.btn.joinRoom", {})}</span>
                         <FiLink aria-hidden="true" />
+                        <span>{formatWording("general.btn.joinRoom", {})}</span>
                     </button>
                     <button type="button" className="party-action party-action-create" onClick={handleCreateRoomClick}>
-                        <span>{formatWording("general.btn.createRoom", {})}</span>
                         <FiPlusCircle aria-hidden="true" />
+                        <span>{formatWording("general.btn.createRoom", {})}</span>
                     </button>
                 </div>
             </div>

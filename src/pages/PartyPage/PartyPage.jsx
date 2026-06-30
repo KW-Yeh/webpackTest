@@ -1071,8 +1071,8 @@ const PartyPage = () => {
                                         className="party-restart-btn"
                                         disabled={restartPending}
                                         onClick={handleRestartClick}>
-                                        {formatWording(restartPending ? "party.restart.pending" : "party.btn.restart", {})}
                                         <VscDebugRestart aria-hidden="true" />
+                                        <span>{formatWording(restartPending ? "party.restart.pending" : "party.btn.restart", {})}</span>
                                     </button>
                                 )}
                             </div>
