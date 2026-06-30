@@ -156,7 +156,8 @@ input[type=number] {
 }
 
 .submit-answer-btn {
-  flex: 0 0 auto;
+  flex: 0 0 100%;
+  width: 100%;
   min-width: 108px;
   padding: 0 18px;
   border-radius: var(--apple-radius-pill);
@@ -165,10 +166,4 @@ input[type=number] {
   font-size: 17px;
   line-height: 1.2;
   letter-spacing: 0;
-}
-
-@media (max-width: 640px) {
-  .submit-answer-btn {
-    width: 100%;
-  }
 }
