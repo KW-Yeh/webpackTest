@@ -1,5 +1,7 @@
 import Peer from 'peerjs';
 
+export const MAX_PARTY_PLAYERS = 6;
+
 const peerOptions = {
     debug: 2,
     config: {
@@ -35,3 +37,59 @@ export const createGuestPeer = () =>
 
 export const connectToHost = (peer, roomCode) =>
     peer.connect(`bullscows-${roomCode}`, { reliable: true });
+
+export const createHostConnectionPool = ({ maxPlayers = MAX_PARTY_PLAYERS, maxPendingConnections = 2 } = {}) => {
+    const connections = new Map();
+    const connectionLimit = maxPlayers - 1 + maxPendingConnections;
+
+    return {
+        connections,
+        get size() {
+            return connections.size;
+        },
+        hasCapacity: () => connections.size < maxPlayers - 1,
+        register: (conn) => {
+            if (!conn || !conn.peer) {
+                return false;
+            }
+
+            if (!connections.has(conn.peer) && connections.size >= connectionLimit) {
+                return false;
+            }
+
+            connections.set(conn.peer, conn);
+            return true;
+        },
+        remove: (peerId, conn) => {
+            if (conn && connections.get(peerId) !== conn) {
+                return false;
+            }
+
+            return connections.delete(peerId);
+        },
+        get: (peerId) => connections.get(peerId),
+        broadcast: (message, { exceptPeerId } = {}) => {
+            connections.forEach((conn, peerId) => {
+                if (peerId === exceptPeerId || !conn.open) {
+                    return;
+                }
+
+                try {
+                    conn.send(message);
+                } catch (error) {
+                    return;
+                }
+            });
+        },
+        closeAll: () => {
+            connections.forEach((conn) => {
+                try {
+                    conn.close();
+                } catch (error) {
+                    return;
+                }
+            });
+            connections.clear();
+        },
+    };
+};

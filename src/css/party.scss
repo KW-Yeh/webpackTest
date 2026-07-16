@@ -407,6 +407,655 @@
   }
 }
 
+.party-waiting-room {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 20px;
+}
+
+.party-waiting-header {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr);
+  align-items: center;
+
+  > div {
+    grid-column: 2;
+    text-align: center;
+  }
+}
+
+.party-waiting-leave {
+  grid-column: 1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 8px;
+  border-radius: var(--apple-radius-pill);
+  background: transparent;
+  color: var(--apple-primary);
+  font-size: 15px;
+}
+
+.party-waiting-title {
+  margin: 0;
+  color: var(--apple-ink);
+  font-family: var(--apple-font-display);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.party-waiting-player-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--apple-muted);
+  font-size: 14px;
+}
+
+.party-waiting-notice {
+  padding: 10px 14px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-surface-pearl);
+  color: var(--apple-muted);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.party-waiting-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.85fr);
+  align-items: start;
+  gap: 20px;
+  min-width: 0;
+}
+
+.party-waiting-main {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.party-waiting-invite,
+.party-waiting-players,
+.party-waiting-mode,
+.party-waiting-chat {
+  min-width: 0;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-lg);
+  background: var(--apple-canvas);
+}
+
+.party-waiting-invite {
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.party-waiting-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  color: var(--apple-ink);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.party-waiting-room-code {
+  color: var(--apple-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(30px, 4vw, 40px);
+  font-weight: 600;
+  letter-spacing: 6px;
+  line-height: 1.1;
+}
+
+.party-waiting-qr {
+  width: 148px;
+  height: 148px;
+  padding: 8px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-canvas);
+}
+
+.party-waiting-invite-link {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-canvas-parchment);
+  color: var(--apple-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.party-waiting-copy,
+.party-waiting-start,
+.party-waiting-chat-send,
+.party-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--apple-control-height);
+  padding: 0 18px;
+  border-radius: var(--apple-radius-pill);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.party-waiting-copy,
+.party-waiting-start,
+.party-waiting-chat-send {
+  background: var(--apple-primary);
+  color: var(--apple-on-primary);
+}
+
+.party-waiting-copy {
+  width: 100%;
+}
+
+.party-waiting-player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.party-waiting-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-canvas-parchment);
+
+  &.is-offline {
+    color: var(--apple-muted);
+  }
+}
+
+.party-waiting-player-status {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: #ff453a;
+
+  .is-online & {
+    background: #30d158;
+  }
+}
+
+.party-waiting-player-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-waiting-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: var(--apple-radius-pill);
+  background: var(--apple-surface-pearl);
+  border: 1px solid var(--apple-hairline);
+  color: var(--apple-muted);
+  font-size: 11px;
+  font-weight: 600;
+
+  &.is-host {
+    border-color: var(--apple-primary);
+    color: var(--apple-primary);
+  }
+}
+
+.party-waiting-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  .party-waiting-section-title {
+    grid-column: 1 / -1;
+  }
+
+  &:disabled .party-waiting-mode-option {
+    cursor: default;
+    opacity: 0.65;
+  }
+}
+
+.party-waiting-mode-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--apple-control-height);
+  padding: 0 12px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-surface-pearl);
+  color: var(--apple-muted);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+
+  &:has(input:checked) {
+    border-color: var(--apple-primary);
+    background: var(--apple-canvas);
+    color: var(--apple-primary);
+  }
+
+  &:has(input:focus-visible) {
+    outline: 2px solid var(--apple-primary-focus);
+    outline-offset: 2px;
+  }
+
+  input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    padding: 0;
+    opacity: 0;
+  }
+}
+
+.party-waiting-start {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.party-waiting-chat {
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto;
+  min-height: 560px;
+  max-height: 680px;
+}
+
+.party-waiting-chat-messages {
+  min-height: 0;
+  margin: 0;
+  padding: 0 4px 14px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.party-waiting-chat-message {
+  max-width: 88%;
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-canvas-parchment);
+
+  &.is-me {
+    margin-left: auto;
+    background: var(--apple-primary);
+    color: var(--apple-on-primary);
+
+    .party-waiting-chat-meta {
+      color: rgba(255, 255, 255, 0.78);
+    }
+  }
+
+  p {
+    margin: 4px 0 0;
+    font-size: 14px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+}
+
+.party-waiting-chat-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--apple-muted);
+  font-size: 11px;
+}
+
+.party-waiting-chat-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-waiting-chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--apple-divider-soft);
+}
+
+.party-waiting-chat-input-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.party-waiting-chat-input {
+  min-width: 0;
+}
+
+.party-waiting-chat-send {
+  padding-inline: 14px;
+}
+
+.party-playing-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: start;
+  gap: 20px;
+  min-width: 0;
+}
+
+.party-board {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-lg);
+  background: var(--apple-canvas);
+}
+
+.party-board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--apple-divider-soft);
+
+  h1 {
+    margin: 4px 0 0;
+    color: var(--apple-ink);
+    font-family: var(--apple-font-display);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+}
+
+.party-board-mode {
+  color: var(--apple-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.party-secondary-btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--apple-hairline);
+  background: var(--apple-surface-pearl);
+  color: var(--apple-ink);
+}
+
+.party-submit-status {
+  padding: 10px 14px;
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-canvas-parchment);
+  color: var(--apple-muted);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.party-multi-records {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.party-player-record,
+.party-race-opponents {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-surface-pearl);
+}
+
+.party-player-record > header,
+.party-race-opponents > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--apple-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.party-record-round {
+  flex: 0 0 auto;
+  color: var(--apple-muted);
+  font-size: 12px;
+}
+
+.party-player-pending {
+  padding: 9px 10px;
+  border: 1px dashed var(--apple-hairline);
+  border-radius: var(--apple-radius-sm);
+  color: var(--apple-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.party-race-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.85fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.party-race-own-record {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.party-race-opponents {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.party-race-opponent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-canvas-parchment);
+  font-size: 13px;
+
+  > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.party-game-chat {
+  position: sticky;
+  top: 20px;
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto;
+  min-width: 0;
+  min-height: 480px;
+  max-height: calc(100vh - 48px);
+  padding: 20px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-lg);
+  background: var(--apple-canvas);
+
+  h2 {
+    margin: 0 0 14px;
+    color: var(--apple-ink);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--apple-divider-soft);
+  }
+
+  form button {
+    padding: 0 14px;
+    border-radius: var(--apple-radius-pill);
+    background: var(--apple-primary);
+    color: var(--apple-on-primary);
+    font-size: 14px;
+  }
+}
+
+.party-game-chat-messages {
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    max-width: 88%;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: var(--apple-radius-sm);
+    background: var(--apple-canvas-parchment);
+    font-size: 13px;
+    line-height: 1.4;
+
+    &.is-me {
+      align-items: flex-end;
+      margin-left: auto;
+      background: var(--apple-primary);
+      color: var(--apple-on-primary);
+    }
+
+    strong {
+      max-width: 100%;
+      overflow: hidden;
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    span {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+  }
+}
+
+@media (hover: hover) {
+  .party-waiting-leave:hover,
+  .party-secondary-btn:hover {
+    background: var(--apple-canvas-parchment);
+  }
+
+  .party-waiting-copy:hover:not(:disabled),
+  .party-waiting-start:hover:not(:disabled),
+  .party-waiting-chat-send:hover:not(:disabled),
+  .party-game-chat form button:hover:not(:disabled) {
+    background: var(--apple-primary-focus);
+  }
+
+  .party-waiting-mode-option:hover {
+    border-color: var(--apple-primary);
+  }
+}
+
+@media (max-width: 760px) {
+  .party-waiting-header {
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+
+    > div {
+      grid-column: 2;
+      text-align: right;
+    }
+  }
+
+  .party-waiting-title {
+    font-size: 24px;
+  }
+
+  .party-waiting-layout,
+  .party-playing-layout,
+  .party-race-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .party-waiting-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .party-waiting-invite {
+    grid-row: auto;
+  }
+
+  .party-waiting-chat {
+    min-height: 440px;
+    max-height: 560px;
+  }
+
+  .party-board {
+    padding: 18px;
+  }
+
+  .party-board-header {
+    align-items: flex-start;
+  }
+
+  .party-game-chat {
+    position: static;
+    min-height: 400px;
+    max-height: 540px;
+  }
+}
+
 @media (max-width: 640px) {
   .container-party {
     width: 100%;
