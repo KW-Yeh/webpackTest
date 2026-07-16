@@ -7,19 +7,11 @@ import { setUser } from '../../component/Player/userSlice';
 import { env } from '../../../env.js';
 import { formatWording } from '../../../utils/langUtils';
 import { shuffleArray } from '../../module/shuffleArray';
+import { clearPartyRoom, loadPartyRoom } from '../../module/partyRoomStorage';
 import { PARTY_MODE, PARTY_PHASE, usePartyRoom } from '../../module/usePartyRoom';
 import CoopBoard from './CoopBoard.jsx';
 import RaceBoard from './RaceBoard.jsx';
 import WaitingRoom from './WaitingRoom.jsx';
-
-const readSavedRoom = () => {
-    try {
-        const value = window.sessionStorage.getItem('bulls-cows-party-room');
-        return value ? JSON.parse(value) : null;
-    } catch {
-        return null;
-    }
-};
 
 const createTarget = () => shuffleArray([...env.GAME.NUMBER_RANGE]).slice(0, 4).join('');
 
@@ -64,7 +56,7 @@ const PartyPage = () => {
     const reduxName = useSelector((state) => state.userReducer.name, shallowEqual);
     const reduxRole = useSelector((state) => state.partyPageReducer.role, shallowEqual);
     const reduxRoomID = useSelector((state) => state.partyPageReducer.roomID, shallowEqual);
-    const savedRoom = useMemo(readSavedRoom, []);
+    const savedRoom = useMemo(loadPartyRoom, []);
     const userName = reduxName || window.localStorage.getItem(env.LOCAL.STORAGE.PLAYER_NAME) || formatWording('general.default.playerName', {});
     const role = reduxRole === 'host' && !(savedRoom?.role === 'guest' && !reduxRoomID) ? 'host' : 'guest';
     const roomID = reduxRoomID || (role === 'guest' ? savedRoom?.roomCode || '' : '');
@@ -80,6 +72,7 @@ const PartyPage = () => {
 
     useEffect(() => {
         if (!room.closed || room.isHost) return;
+        clearPartyRoom();
         window.sessionStorage.setItem('partyExitNotice', room.notice);
         navigate('/', { replace: true, state: { stage: 'party_setup', notice: room.notice } });
     }, [navigate, room.closed, room.isHost, room.notice]);
@@ -131,6 +124,7 @@ const PartyPage = () => {
                     notice={room.notice}
                     onCopyInvite={copyInvite}
                     inviteCopied={inviteCopied}
+                    inviteAvailable={!room.connectionIssue}
                     onSendChat={room.actions.sendChat}
                     onModeChange={room.actions.setMode}
                     onStart={startGame}

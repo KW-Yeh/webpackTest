@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Logger } from './logger';
 import { calculateAB, compareRaceWins, isValidGuess } from './partyGame';
+import { clearPartyRoom, loadPartyRoom, savePartyRoom } from './partyRoomStorage';
 import {
     connectToHost,
     createGuestPeer,
@@ -20,11 +21,13 @@ const logger = Logger({ className: 'usePartyRoom' });
 
 const HEARTBEAT_INTERVAL_MS = 5000;
 const HEARTBEAT_TIMEOUT_MS = 20000;
+const INITIAL_CONNECTION_TIMEOUT_MS = 10000;
+const PENDING_HELLO_TIMEOUT_MS = 10000;
 const RECONNECT_GRACE_MS = 60000;
 const RECONNECT_RETRY_MS = 3000;
+const SIGNALING_RECONNECT_WATCHDOG_MS = 5000;
 const RACE_WIN_WINDOW_MS = 500;
 const PARTY_SESSION_ID_KEY = 'bulls-cows-party-session-id';
-const PARTY_ROOM_KEY = 'bulls-cows-party-room';
 
 const createSessionId = () => {
     const stored = window.sessionStorage.getItem(PARTY_SESSION_ID_KEY);
@@ -40,31 +43,6 @@ const createSessionId = () => {
 const createPublicId = () => window.crypto?.randomUUID
     ? window.crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-const loadRoom = () => {
-    try {
-        const saved = window.sessionStorage.getItem(PARTY_ROOM_KEY);
-        return saved ? JSON.parse(saved) : null;
-    } catch {
-        return null;
-    }
-};
-
-const saveRoom = (role, roomCode) => {
-    try {
-        window.sessionStorage.setItem(PARTY_ROOM_KEY, JSON.stringify({ role, roomCode }));
-    } catch {
-        return;
-    }
-};
-
-export const clearPartyRoom = () => {
-    try {
-        window.sessionStorage.removeItem(PARTY_ROOM_KEY);
-    } catch {
-        return;
-    }
-};
 
 const createRoomCode = () => String(Math.floor(100000 + Math.random() * 900000));
 
@@ -102,8 +80,14 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     const playerSessionsRef = useRef(new Map());
     const lastSeenRef = useRef(new Map());
     const removalTimersRef = useRef(new Map());
+    const pendingHandshakeTimersRef = useRef(new Map());
     const reconnectTimerRef = useRef(null);
     const reconnectDeadlineRef = useRef(0);
+    const initialConnectionTimerRef = useRef(null);
+    const hostPeerRetryTimerRef = useRef(null);
+    const signalingReconnectTimerRef = useRef(null);
+    const hostRebuildRequestedRef = useRef(false);
+    const hostSignalingHealthyRef = useRef(false);
     const guestHeartbeatRef = useRef(null);
     const hostHeartbeatRef = useRef(null);
     const raceWindowRef = useRef(null);
@@ -112,6 +96,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     const modeRef = useRef(mode);
     const phaseRef = useRef(phase);
     const gameRef = useRef(game);
+    const hostRoomCodeRef = useRef('');
 
     useEffect(() => { modeRef.current = mode; }, [mode]);
     useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -127,6 +112,49 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
         gameRef.current = nextGame;
         setGame(nextGame);
     }, []);
+
+    const clearInitialConnectionTimer = useCallback(() => {
+        if (!initialConnectionTimerRef.current) return;
+        clearTimeout(initialConnectionTimerRef.current);
+        initialConnectionTimerRef.current = null;
+    }, []);
+
+    const clearPendingHandshakeTimer = useCallback((connection) => {
+        const pending = pendingHandshakeTimersRef.current.get(connection?.peer);
+        if (!pending || pending.connection !== connection) return false;
+        clearTimeout(pending.timer);
+        pendingHandshakeTimersRef.current.delete(connection.peer);
+        return true;
+    }, []);
+
+    const scheduleGuestRetry = useCallback((connection, failureNotice) => {
+        if (destroyedRef.current || closedRef.current || isHost) return;
+        if (connection && hostConnectionRef.current && hostConnectionRef.current !== connection) return;
+
+        clearInitialConnectionTimer();
+        if (!connection || hostConnectionRef.current === connection) hostConnectionRef.current = null;
+        setConnectionIssue(true);
+        setNotice(failureNotice);
+        try {
+            connection?.close();
+        } catch (error) {
+            logger.error('Guest connection cleanup failed', error);
+        }
+
+        const now = Date.now();
+        if (!reconnectDeadlineRef.current) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
+        if (now >= reconnectDeadlineRef.current) {
+            closedRef.current = true;
+            setClosed(true);
+            setNotice('重新連線逾時，請返回大廳。');
+            return;
+        }
+        if (reconnectTimerRef.current) return;
+        reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!destroyedRef.current && !closedRef.current) setRetryKey((key) => key + 1);
+        }, RECONNECT_RETRY_MS);
+    }, [clearInitialConnectionTimer, isHost]);
 
     const sendConnection = useCallback((connection, type, payload = {}) => {
         if (!connection?.open) return false;
@@ -287,6 +315,18 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 return;
             }
 
+            if (poolRef.current?.isVerified(peerId, connection)) {
+                const verifiedSessionId = playerId ? playerSessionsRef.current.get(playerId) : '';
+                if (!playerId || verifiedSessionId !== incomingId) {
+                    sendConnection(connection, PARTY_MESSAGE.REJECT, { reason: 'invalid-player' });
+                    connection.close();
+                    return;
+                }
+                publishRoster(connection);
+                sendConnection(connection, PARTY_MESSAGE.SYNC, createSyncPayload(playerId));
+                return;
+            }
+
             const boundPlayerId = connectionSessionsRef.current.get(peerId);
             const boundSessionId = boundPlayerId ? playerSessionsRef.current.get(boundPlayerId) : '';
             if (boundSessionId && boundSessionId !== incomingId) {
@@ -314,16 +354,26 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             }
 
             const playerId = existingPlayerId || createPublicId();
+            const previousConnection = playerConnectionsRef.current.get(playerId);
+            const promoted = poolRef.current?.promote(connection, previousConnection ? {
+                replacePeerId: previousConnection.peerId,
+                replaceConnection: previousConnection.connection,
+            } : undefined);
+            if (!promoted) {
+                sendConnection(connection, PARTY_MESSAGE.REJECT, { reason: 'room-full' });
+                connection.close();
+                return;
+            }
+
+            clearPendingHandshakeTimer(connection);
+            if (previousConnection && previousConnection.connection !== connection) {
+                connectionSessionsRef.current.delete(previousConnection.peerId);
+            }
             connectionSessionsRef.current.set(peerId, playerId);
             sessionPlayersRef.current.set(incomingId, playerId);
             playerSessionsRef.current.set(playerId, incomingId);
-            const previousConnection = playerConnectionsRef.current.get(playerId);
-            if (previousConnection && previousConnection.connection !== connection) {
-                connectionSessionsRef.current.delete(previousConnection.peerId);
-                poolRef.current?.remove(previousConnection.peerId, previousConnection.connection);
-                previousConnection.connection.close();
-            }
             playerConnectionsRef.current.set(playerId, { peerId, connection });
+            if (previousConnection && previousConnection.connection !== connection) previousConnection.connection.close();
             const removalTimer = removalTimersRef.current.get(playerId);
             if (removalTimer) clearTimeout(removalTimer);
             removalTimersRef.current.delete(playerId);
@@ -339,7 +389,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             return;
         }
 
-        if (!playerId) return;
+        if (!playerId || !poolRef.current?.isVerified(peerId, connection)) return;
         lastSeenRef.current.set(peerId, Date.now());
         const player = playersRef.current.get(playerId);
         if (!player) return;
@@ -408,7 +458,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             default:
                 break;
         }
-    }, [appendChat, broadcast, createSyncPayload, processCoopSubmit, publishRoster, registerRaceWin, removePlayer, sendConnection, updateGame]);
+    }, [appendChat, broadcast, clearPendingHandshakeTimer, createSyncPayload, processCoopSubmit, publishRoster, registerRaceWin, removePlayer, sendConnection, updateGame]);
 
     const handleGuestMessage = useCallback((message) => {
         const payload = message.payload;
@@ -419,6 +469,10 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 setModeState(modeRef.current);
                 break;
             case PARTY_MESSAGE.SYNC:
+                clearInitialConnectionTimer();
+                reconnectDeadlineRef.current = 0;
+                setConnectionIssue(false);
+                setNotice('');
                 if (payload.selfId) setSelfId(payload.selfId);
                 modeRef.current = payload.mode || PARTY_MODE.COOP;
                 setModeState(modeRef.current);
@@ -489,11 +543,15 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 sendConnection(hostConnectionRef.current, PARTY_MESSAGE.PONG, { at: Date.now() });
                 break;
             case PARTY_MESSAGE.LEAVE:
+                clearInitialConnectionTimer();
+                clearPartyRoom();
                 closedRef.current = true;
                 setClosed(true);
                 setNotice('房主已離開房間。');
                 break;
             case PARTY_MESSAGE.REJECT:
+                clearInitialConnectionTimer();
+                clearPartyRoom();
                 closedRef.current = true;
                 setClosed(true);
                 setConnectionIssue(true);
@@ -502,51 +560,71 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             default:
                 break;
         }
-    }, [appendChat, sendConnection, updateGame, updatePhase]);
+    }, [appendChat, clearInitialConnectionTimer, sendConnection, updateGame, updatePhase]);
 
     const wireGuestConnection = useCallback((connection) => {
         hostConnectionRef.current = connection;
         logger.info('Guest connection created', connection.peer);
+        clearInitialConnectionTimer();
+        initialConnectionTimerRef.current = setTimeout(() => {
+            scheduleGuestRetry(connection, '連線逾時，正在重新嘗試；也可以返回大廳。');
+        }, INITIAL_CONNECTION_TIMEOUT_MS);
         connection.peerConnection?.addEventListener('connectionstatechange', () => {
             logger.info('Guest peer connection state', connection.peerConnection?.connectionState);
         });
         connection.on('open', () => {
             logger.info('Guest connection opened', connection.peer);
-            reconnectDeadlineRef.current = 0;
-            setConnectionIssue(false);
-            setNotice('');
+            setNotice('正在驗證房間...');
             sendConnection(connection, PARTY_MESSAGE.HELLO, { sessionId: sessionIdRef.current, name: userName });
         });
         connection.on('data', (data) => {
+            if (hostConnectionRef.current !== connection) return;
             if (isPartyMessage(data)) handleGuestMessage(data);
         });
-        connection.on('error', (error) => logger.error('Guest connection error', error));
+        connection.on('error', (error) => {
+            logger.error('Guest connection error', error);
+            scheduleGuestRetry(connection, '連線失敗，正在重新嘗試；也可以返回大廳。');
+        });
         connection.on('close', () => {
             logger.info('Guest connection closed', connection.peer);
             if (destroyedRef.current || closedRef.current || hostConnectionRef.current !== connection) return;
-            hostConnectionRef.current = null;
-            setConnectionIssue(true);
-            setNotice('連線中斷，正在重新連線...');
-            const now = Date.now();
-            if (!reconnectDeadlineRef.current) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
-            if (now >= reconnectDeadlineRef.current) {
-                setClosed(true);
-                setNotice('重新連線逾時，請返回大廳。');
-                return;
-            }
-            reconnectTimerRef.current = setTimeout(() => setRetryKey((key) => key + 1), RECONNECT_RETRY_MS);
+            const failureNotice = phaseRef.current === PARTY_PHASE.CONNECTING
+                ? '無法加入房間，正在重新嘗試；也可以返回大廳。'
+                : '連線中斷，正在重新連線；也可以返回大廳。';
+            scheduleGuestRetry(connection, failureNotice);
         });
-    }, [handleGuestMessage, sendConnection, userName]);
+    }, [clearInitialConnectionTimer, handleGuestMessage, scheduleGuestRetry, sendConnection, userName]);
 
     useEffect(() => {
         destroyedRef.current = false;
+        hostRebuildRequestedRef.current = false;
         let activePeer = null;
         let cancelled = false;
-        const savedRoom = loadRoom();
+        const savedRoom = loadPartyRoom();
         const resolvedRoom = isHost
-            ? (savedRoom?.role === 'host' ? savedRoom.roomCode : createRoomCode())
+            ? (hostRoomCodeRef.current || (savedRoom?.role === 'host' ? savedRoom.roomCode : createRoomCode()))
             : (roomID || savedRoom?.roomCode || '');
         setRoomCode(resolvedRoom);
+
+        const scheduleHostPeerRebuild = (error) => {
+            if (cancelled || !isHost || (phaseRef.current !== PARTY_PHASE.WAITING_ROOM && phaseRef.current !== PARTY_PHASE.CONNECTING)) return false;
+            const expectedPeer = activePeer;
+            hostSignalingHealthyRef.current = false;
+            logger.error('Host signaling unavailable; scheduling peer rebuild', error);
+            setConnectionIssue(true);
+            setNotice('房間連線服務恢復中，暫時無法邀請新玩家；你仍可離開房間。');
+            if (hostPeerRetryTimerRef.current) return true;
+            hostPeerRetryTimerRef.current = setTimeout(() => {
+                hostPeerRetryTimerRef.current = null;
+                if (cancelled || destroyedRef.current || closedRef.current) return;
+                if (phaseRef.current !== PARTY_PHASE.WAITING_ROOM && phaseRef.current !== PARTY_PHASE.CONNECTING) return;
+                if (hostSignalingHealthyRef.current) return;
+                if (expectedPeer ? peerRef.current !== expectedPeer : peerRef.current !== null) return;
+                hostRebuildRequestedRef.current = true;
+                setRetryKey((key) => key + 1);
+            }, RECONNECT_RETRY_MS);
+            return true;
+        };
 
         const initialize = async () => {
             try {
@@ -555,49 +633,76 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                     if (cancelled) { peer.destroy(); return; }
                     activePeer = peer;
                     peerRef.current = peer;
-                    poolRef.current = createHostConnectionPool();
-                    playersRef.current = new Map([[
-                        hostIdRef.current,
-                        { id: hostIdRef.current, name: userName, online: true, isHost: true },
-                    ]]);
-                    sessionPlayersRef.current = new Map([[sessionIdRef.current, hostIdRef.current]]);
-                    playerSessionsRef.current = new Map([[hostIdRef.current, sessionIdRef.current]]);
+                    hostSignalingHealthyRef.current = true;
+                    const hostPool = createHostConnectionPool();
+                    poolRef.current = hostPool;
+                    if (!hostRoomCodeRef.current) {
+                        hostRoomCodeRef.current = resolvedRoom;
+                        playersRef.current = new Map([[
+                            hostIdRef.current,
+                            { id: hostIdRef.current, name: userName, online: true, isHost: true },
+                        ]]);
+                        sessionPlayersRef.current = new Map([[sessionIdRef.current, hostIdRef.current]]);
+                        playerSessionsRef.current = new Map([[hostIdRef.current, sessionIdRef.current]]);
+                    }
                     setSelfId(hostIdRef.current);
-                    saveRoom('host', resolvedRoom);
+                    savePartyRoom('host', resolvedRoom);
                     updatePhase(PARTY_PHASE.WAITING_ROOM);
+                    setConnectionIssue(false);
+                    setNotice('');
                     publishRoster();
                     peer.on('connection', (connection) => {
+                        if (peerRef.current !== peer || poolRef.current !== hostPool) {
+                            connection.close();
+                            return;
+                        }
                         logger.info('Host received connection', connection.peer);
                         connection.peerConnection?.addEventListener('connectionstatechange', () => {
                             logger.info('Host peer connection state', connection.peerConnection?.connectionState);
                         });
-                        if (!poolRef.current?.register(connection)) {
-                            connection.on('open', () => {
+                        if (!hostPool.registerPending(connection)) {
+                            const reject = () => {
                                 sendConnection(connection, PARTY_MESSAGE.REJECT, { reason: 'room-full' });
                                 connection.close();
-                            });
+                            };
+                            if (connection.open) reject();
+                            else connection.on('open', reject);
                             return;
                         }
-                        lastSeenRef.current.set(connection.peer, Date.now());
+                        const handshakeTimer = setTimeout(() => {
+                            if (!hostPool.removePending(connection.peer, connection)) return;
+                            clearPendingHandshakeTimer(connection);
+                            sendConnection(connection, PARTY_MESSAGE.REJECT, { reason: 'invalid-player' });
+                            connection.close();
+                        }, PENDING_HELLO_TIMEOUT_MS);
+                        pendingHandshakeTimersRef.current.set(connection.peer, { connection, timer: handshakeTimer });
                         connection.on('data', (data) => {
                             if (isPartyMessage(data)) handleHostMessage(connection, data);
                         });
                         connection.on('close', () => {
-                            poolRef.current?.remove(connection.peer, connection);
+                            clearPendingHandshakeTimer(connection);
+                            hostPool.removePending(connection.peer, connection);
+                            const removedVerified = hostPool.remove(connection.peer, connection);
+                            if (!removedVerified || poolRef.current !== hostPool) return;
                             const playerId = connectionSessionsRef.current.get(connection.peer);
-                            connectionSessionsRef.current.delete(connection.peer);
-                            lastSeenRef.current.delete(connection.peer);
                             const activeConnection = playerConnectionsRef.current.get(playerId);
                             if (playerId && activeConnection?.connection === connection) {
+                                connectionSessionsRef.current.delete(connection.peer);
+                                lastSeenRef.current.delete(connection.peer);
                                 playerConnectionsRef.current.delete(playerId);
                                 markPlayerOffline(playerId);
                             }
                         });
-                        connection.on('error', (error) => logger.error('Host connection error', error));
+                        connection.on('error', (error) => {
+                            logger.error('Host connection error', error);
+                            clearPendingHandshakeTimer(connection);
+                            hostPool.removePending(connection.peer, connection);
+                            connection.close();
+                        });
                     });
                     hostHeartbeatRef.current = setInterval(() => {
                         const now = Date.now();
-                        poolRef.current?.connections.forEach((connection, peerId) => {
+                        hostPool.connections.forEach((connection, peerId) => {
                             if (now - (lastSeenRef.current.get(peerId) || now) > HEARTBEAT_TIMEOUT_MS) {
                                 connection.close();
                                 return;
@@ -616,25 +721,67 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                     if (cancelled) { peer.destroy(); return; }
                     activePeer = peer;
                     peerRef.current = peer;
-                    saveRoom('guest', resolvedRoom);
+                    savePartyRoom('guest', resolvedRoom);
                     setNotice('正在連線...');
                     wireGuestConnection(connectToHost(peer, resolvedRoom));
                 }
-                peerRef.current?.on('disconnected', () => {
-                    const currentPeer = peerRef.current;
-                    if (!currentPeer || currentPeer.destroyed) return;
-                    try {
-                        currentPeer.reconnect();
-                    } catch (error) {
-                        logger.error('Peer signaling reconnect failed', error);
+                const peer = activePeer;
+                peer.on('open', () => {
+                    if (peerRef.current !== peer) return;
+                    hostSignalingHealthyRef.current = true;
+                    if (hostPeerRetryTimerRef.current) clearTimeout(hostPeerRetryTimerRef.current);
+                    hostPeerRetryTimerRef.current = null;
+                    if (signalingReconnectTimerRef.current) clearTimeout(signalingReconnectTimerRef.current);
+                    signalingReconnectTimerRef.current = null;
+                    if (isHost) {
+                        setConnectionIssue(false);
+                        setNotice('');
                     }
                 });
-                peerRef.current?.on('error', (error) => logger.error('Peer signaling error', error));
+                peer.on('disconnected', () => {
+                    if (peerRef.current !== peer || peer.destroyed) return;
+                    if (isHost && phaseRef.current !== PARTY_PHASE.WAITING_ROOM) return;
+                    if (isHost) {
+                        hostSignalingHealthyRef.current = false;
+                        setConnectionIssue(true);
+                        setNotice('房間連線服務恢復中，暫時無法邀請新玩家；你仍可離開房間。');
+                    }
+                    try {
+                        peer.reconnect();
+                        if (signalingReconnectTimerRef.current) clearTimeout(signalingReconnectTimerRef.current);
+                        signalingReconnectTimerRef.current = setTimeout(() => {
+                            signalingReconnectTimerRef.current = null;
+                            if (peerRef.current !== peer) return;
+                            if (peer.open) {
+                                if (isHost) {
+                                    hostSignalingHealthyRef.current = true;
+                                    setConnectionIssue(false);
+                                    setNotice('');
+                                }
+                                return;
+                            }
+                            if (isHost) scheduleHostPeerRebuild(new Error('Peer signaling reconnect timed out'));
+                            else scheduleGuestRetry(hostConnectionRef.current, '連線服務中斷，正在重新嘗試；也可以返回大廳。');
+                        }, SIGNALING_RECONNECT_WATCHDOG_MS);
+                    } catch (error) {
+                        logger.error('Peer signaling reconnect failed', error);
+                        if (isHost) scheduleHostPeerRebuild(error);
+                        else scheduleGuestRetry(hostConnectionRef.current, '連線服務中斷，正在重新嘗試；也可以返回大廳。');
+                    }
+                });
+                peer.on('error', (error) => {
+                    if (peerRef.current !== peer) return;
+                    logger.error('Peer signaling error', error);
+                    if (isHost) {
+                        hostSignalingHealthyRef.current = false;
+                        scheduleHostPeerRebuild(error);
+                    }
+                    else scheduleGuestRetry(hostConnectionRef.current, '找不到房間或連線失敗，正在重新嘗試；也可以返回大廳。');
+                });
             } catch (error) {
                 logger.error('Party peer initialization failed', error);
-                setConnectionIssue(true);
-                setNotice('連線失敗，正在重新嘗試...');
-                reconnectTimerRef.current = setTimeout(() => setRetryKey((key) => key + 1), RECONNECT_RETRY_MS);
+                if (isHost) scheduleHostPeerRebuild(error);
+                else scheduleGuestRetry(null, '找不到房間或連線失敗，正在重新嘗試；也可以返回大廳。');
             }
         };
 
@@ -643,17 +790,36 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             cancelled = true;
             destroyedRef.current = true;
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+            clearInitialConnectionTimer();
+            if (hostPeerRetryTimerRef.current) clearTimeout(hostPeerRetryTimerRef.current);
+            hostPeerRetryTimerRef.current = null;
+            if (signalingReconnectTimerRef.current) clearTimeout(signalingReconnectTimerRef.current);
+            signalingReconnectTimerRef.current = null;
             if (guestHeartbeatRef.current) clearTimeout(guestHeartbeatRef.current);
             if (hostHeartbeatRef.current) clearInterval(hostHeartbeatRef.current);
             hostHeartbeatRef.current = null;
             hostConnectionRef.current?.close();
             hostConnectionRef.current = null;
-            poolRef.current?.closeAll();
-            poolRef.current = null;
+            pendingHandshakeTimersRef.current.forEach(({ timer }) => clearTimeout(timer));
+            pendingHandshakeTimersRef.current.clear();
+            const currentPool = poolRef.current;
+            if (currentPool && activePeer && peerRef.current === activePeer) poolRef.current = null;
+            if (isHost && hostRebuildRequestedRef.current && currentPool) {
+                playerConnectionsRef.current.forEach(({ connection }, playerId) => {
+                    if (currentPool.isVerified(connection.peer, connection)) markPlayerOffline(playerId);
+                });
+            }
+            if (isHost && currentPool) {
+                connectionSessionsRef.current.clear();
+                playerConnectionsRef.current.clear();
+                lastSeenRef.current.clear();
+            }
+            currentPool?.closeAll();
             activePeer?.destroy();
             if (peerRef.current === activePeer) peerRef.current = null;
         };
-    }, [handleHostMessage, isHost, markPlayerOffline, publishRoster, retryKey, roomID, sendConnection, updatePhase, userName, wireGuestConnection]);
+    }, [clearInitialConnectionTimer, clearPendingHandshakeTimer, handleHostMessage, isHost, markPlayerOffline, publishRoster, retryKey, roomID, scheduleGuestRetry, sendConnection, updatePhase, userName, wireGuestConnection]);
 
     useEffect(() => () => {
         removalTimersRef.current.forEach(clearTimeout);
@@ -774,4 +940,4 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     };
 };
 
-export { PARTY_MODE, PARTY_PHASE };
+export { clearPartyRoom, PARTY_MODE, PARTY_PHASE };

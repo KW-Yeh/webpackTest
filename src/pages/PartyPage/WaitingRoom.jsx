@@ -24,6 +24,7 @@ const WaitingRoom = ({
     notice,
     onCopyInvite,
     inviteCopied,
+    inviteAvailable = true,
     onSendChat,
     onModeChange,
     onStart,
@@ -31,7 +32,7 @@ const WaitingRoom = ({
 }) => {
     const [chatText, setChatText] = useState("");
     const onlinePlayerCount = roster.filter((player) => player.online).length;
-    const canStart = isHost && onlinePlayerCount >= 2;
+    const canStart = isHost && inviteAvailable && onlinePlayerCount >= 2;
 
     const handleChatSubmit = (event) => {
         event.preventDefault();
@@ -68,19 +69,19 @@ const WaitingRoom = ({
                             {formatWording("party.roomCode.label", {})}
                         </div>
                         <div className="party-waiting-room-code">{roomCode}</div>
-                        {inviteLink && (
+                        {inviteLink && inviteAvailable && (
                             <QRCodeSVG
                                 className="party-waiting-qr"
                                 value={inviteLink}
                                 title={formatWording("party.invite.qrLabel", {})}
                             />
                         )}
-                        <div className="party-waiting-invite-link">{inviteLink}</div>
+                        <div className="party-waiting-invite-link">{inviteAvailable ? inviteLink : ""}</div>
                         <button
                             type="button"
                             className="party-waiting-copy"
                             onClick={onCopyInvite}
-                            disabled={!inviteLink}
+                            disabled={!inviteLink || !inviteAvailable}
                         >
                             {inviteCopied ? <FiCheck aria-hidden="true" /> : <FiCopy aria-hidden="true" />}
                             <span>

@@ -21,45 +21,110 @@ const peerOptions = {
     },
 };
 
-export const createHostPeer = (roomCode) =>
+const PEER_OPEN_TIMEOUT_MS = 10000;
+
+const createPeer = (peerId) =>
     new Promise((resolve, reject) => {
-        const peer = new Peer(`bullscows-${roomCode}`, peerOptions);
-        peer.on('open', () => resolve(peer));
-        peer.on('error', reject);
+        const peer = new Peer(peerId, peerOptions);
+        const cleanup = () => {
+            clearTimeout(timer);
+            peer.off('open', handleOpen);
+            peer.off('error', handleError);
+        };
+        const handleOpen = () => {
+            cleanup();
+            resolve(peer);
+        };
+        const handleError = (error) => {
+            cleanup();
+            peer.destroy();
+            reject(error);
+        };
+        const timer = setTimeout(() => {
+            cleanup();
+            peer.destroy();
+            const error = new Error('Peer signaling connection timed out');
+            error.type = 'peer-open-timeout';
+            reject(error);
+        }, PEER_OPEN_TIMEOUT_MS);
+        peer.on('open', handleOpen);
+        peer.on('error', handleError);
     });
 
-export const createGuestPeer = () =>
-    new Promise((resolve, reject) => {
-        const peer = new Peer(undefined, peerOptions);
-        peer.on('open', () => resolve(peer));
-        peer.on('error', reject);
-    });
+export const createHostPeer = (roomCode) => createPeer(`bullscows-${roomCode}`);
+
+export const createGuestPeer = () => createPeer(undefined);
 
 export const connectToHost = (peer, roomCode) =>
     peer.connect(`bullscows-${roomCode}`, { reliable: true });
 
 export const createHostConnectionPool = ({ maxPlayers = MAX_PARTY_PLAYERS, maxPendingConnections = 2 } = {}) => {
     const connections = new Map();
-    const connectionLimit = maxPlayers - 1 + maxPendingConnections;
+    const pendingConnections = new Map();
+    const verifiedConnectionLimit = maxPlayers - 1;
 
     return {
         connections,
+        pendingConnections,
         get size() {
             return connections.size;
         },
-        hasCapacity: () => connections.size < maxPlayers - 1,
-        register: (conn) => {
+        hasCapacity: () => connections.size < verifiedConnectionLimit,
+        registerPending: (conn) => {
             if (!conn || !conn.peer) {
                 return false;
             }
 
-            if (!connections.has(conn.peer) && connections.size >= connectionLimit) {
+            const existingConnection = pendingConnections.get(conn.peer);
+            if (existingConnection) {
+                return existingConnection === conn;
+            }
+
+            if (pendingConnections.size >= maxPendingConnections) {
                 return false;
             }
 
+            pendingConnections.set(conn.peer, conn);
+            return true;
+        },
+        promote: (conn, { replacePeerId, replaceConnection } = {}) => {
+            if (!conn?.peer || pendingConnections.get(conn.peer) !== conn) {
+                return false;
+            }
+
+            const replacementRequested = replacePeerId !== undefined || replaceConnection !== undefined;
+            const replacementIsValid = replacementRequested
+                && replacePeerId !== undefined
+                && replaceConnection !== undefined
+                && connections.get(replacePeerId) === replaceConnection;
+
+            if (replacementRequested && !replacementIsValid) {
+                return false;
+            }
+
+            const existingConnection = connections.get(conn.peer);
+            if (existingConnection && (!replacementIsValid || replacePeerId !== conn.peer || existingConnection !== replaceConnection)) {
+                return false;
+            }
+
+            const verifiedSizeAfterReplacement = connections.size - (replacementIsValid ? 1 : 0);
+            if (verifiedSizeAfterReplacement >= verifiedConnectionLimit) {
+                return false;
+            }
+
+            pendingConnections.delete(conn.peer);
+            if (replacementIsValid) connections.delete(replacePeerId);
             connections.set(conn.peer, conn);
             return true;
         },
+        removePending: (peerId, conn) => {
+            if (conn && pendingConnections.get(peerId) !== conn) {
+                return false;
+            }
+
+            return pendingConnections.delete(peerId);
+        },
+        isVerified: (peerId, conn) => connections.get(peerId) === conn,
         remove: (peerId, conn) => {
             if (conn && connections.get(peerId) !== conn) {
                 return false;
@@ -89,7 +154,15 @@ export const createHostConnectionPool = ({ maxPlayers = MAX_PARTY_PLAYERS, maxPe
                     return;
                 }
             });
+            pendingConnections.forEach((conn) => {
+                try {
+                    conn.close();
+                } catch (error) {
+                    return;
+                }
+            });
             connections.clear();
+            pendingConnections.clear();
         },
     };
 };

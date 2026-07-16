@@ -13,6 +13,7 @@ import { setRoom, setRole } from "../PartyPage/partyPageSlice";
 import { checkInputs } from "../../module/checkInputs";
 import { Storage } from "../../module/storage";
 import { Logger } from "../../module/logger";
+import { clearPartyRoom } from "../../module/partyRoomStorage";
 import { env } from "../../../env";
 import { formatWording } from "../../../utils/langUtils";
 
@@ -69,6 +70,7 @@ const OpeningPageV2 = () => {
 
     const handleCreateRoomClick = () => {
         logger.success(`Create party room!`);
+        clearPartyRoom();
         const name = resolvePlayerName();
         dispatch(setRole("host"));
         persistPlayer(name, "");
