@@ -109,12 +109,12 @@ const OpeningPageV2 = () => {
             {wording && <div className="wording" role="status">{wording}</div>}
             <div className="mode-options">
                 <button type="button" className="mode-option mode-option-local" onClick={handleLocalBtnClick}>
-                    <VscDebugDisconnect aria-hidden="true" />
-                    <span>{formatWording("general.btn.localMode", {})}</span>
+                    <span className="mode-option-icon" aria-hidden="true"><VscDebugDisconnect /></span>
+                    <span className="mode-option-label">{formatWording("general.btn.localMode", {})}</span>
                 </button>
                 <button type="button" className="mode-option mode-option-party" onClick={() => setStage(OPENING_STAGE.PARTY_SETUP)}>
-                    <FiLink aria-hidden="true" />
-                    <span>{formatWording("general.btn.partyMode", {})}</span>
+                    <span className="mode-option-icon" aria-hidden="true"><FiLink /></span>
+                    <span className="mode-option-label">{formatWording("general.btn.partyMode", {})}</span>
                 </button>
             </div>
         </div>

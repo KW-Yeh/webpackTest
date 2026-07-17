@@ -17,8 +17,7 @@
     .bar {
       width: 8px;
       height: 20px;
-      border-radius: 0.3em;
-      background-color: #45bbfc;
+      border-radius: var(--nt-r-xs);
       animation-iteration-count: infinite;
       animation-duration: 0.8s;
       animation-name: spring;
@@ -26,24 +25,32 @@
   }
 }
 
+/* Decorative sticker palette, one colour per bar (sky → purple → pink →
+   teal → green). The colour lives on the bar class — NOT inside @keyframes —
+   otherwise the animation would repaint every bar to a single colour. */
 .bar1 {
+  background-color: var(--nt-accent-sky);
   animation-delay: 0s;
 }
 .bar2 {
+  background-color: var(--nt-accent-purple);
   animation-delay: 0.1s;
 }
 .bar3 {
+  background-color: var(--nt-accent-pink);
   animation-delay: 0.2s;
 }
 .bar4 {
+  background-color: var(--nt-accent-teal);
   animation-delay: 0.3s;
 }
 .bar5 {
+  background-color: var(--nt-accent-green);
   animation-delay: 0.4s;
 }
 
 @keyframes spring {
-  0% {transform: scale(1, 1); background-color: #45bbfc;}
-  50% {transform: scale(1, 2); background-color: #c541ea;}
-  100% {transform: scale(1, 1); background-color: #45bbfc;}
+  0% {transform: scale(1, 1);}
+  50% {transform: scale(1, 2);}
+  100% {transform: scale(1, 1);}
 }

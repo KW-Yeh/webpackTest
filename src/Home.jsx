@@ -27,6 +27,15 @@ import { formatWording } from "../utils/langUtils";
 
 const ROOM_CODE_PATTERN = /^\d{6}$/;
 
+// Dev/test-only visual snapshot route. Guarded by an `if` statement (not a
+// ternary) so webpack strips the branch and its dynamic import chunk in
+// production builds (optimization.nodeEnv === 'production' + dead-code removal).
+let ScreensRoute = null;
+if (process.env.NODE_ENV !== 'production') {
+    ScreensRoute = React.lazy(() =>
+        import(/* webpackChunkName: "__screens" */ "./pages/__screens/Screens.jsx"));
+}
+
 const PartyRoute = () => {
     const location = useLocation();
     const inviteRoomCode = new URLSearchParams(location.search).get('room')?.trim() || '';
@@ -50,13 +59,14 @@ const PartyRoute = () => {
 
 const Home = () => {
     return (
-        <ErrorBoundary fallback={<p>{formatWording("error.load.page", {})}</p>}>
+        <ErrorBoundary fallback={<div className="error-fallback"><p>{formatWording("error.load.page", {})}</p></div>}>
             <Suspense fallback={<Loader/>}>
                 <HashRouter>
                     <Routes>
                         <Route path="/local" element={<MainPage/>}/>
                         <Route path="/party" element={<PartyRoute/>}/>
                         <Route path="/" element={<OpeningPageV2/>}/>
+                        {ScreensRoute && <Route path="/__screens" element={<ScreensRoute/>}/>}
                     </Routes>
                 </HashRouter>
             </Suspense>

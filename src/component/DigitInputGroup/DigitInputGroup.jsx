@@ -95,7 +95,7 @@ const DigitInputGroup = ({ value, disabled = false, placeholder = "", onChange, 
                     inputMode="numeric"
                     pattern="[0-9]*"
                     maxLength={1}
-                    className="digit-input"
+                    className={digit.trim() ? "digit-input is-filled" : "digit-input"}
                     value={digit.trim()}
                     disabled={disabled}
                     aria-label={`${placeholder} ${index + 1}`}
