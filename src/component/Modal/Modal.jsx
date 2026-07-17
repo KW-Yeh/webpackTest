@@ -25,6 +25,7 @@ const Modal = (props) => {
                         "header": "遊戲獲勝",
                         "content": `一共花了 ${winningStep} 步。`
                     }}
+                    step={ winningStep }
                     actionName="重新一局"
                     action={ props.action }
                 />
@@ -38,7 +39,7 @@ const Modal = (props) => {
         isAlertVisible?
         createPortal(
             <div ref={overlayRef} id="overlay" onClick={handleOverlayClick}>
-                <animated.div className="modal-alert" style={{
+                <animated.div className={`modal-alert${alertType === "winning" ? " modal-alert-winning" : ""}`} style={{
                     transform: xy
                         .to({
                             range:  [0, 0.05, 0.3, 0.5, 0.8 , 1],

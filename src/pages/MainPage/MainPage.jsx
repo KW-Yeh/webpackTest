@@ -205,7 +205,9 @@ const MainPage = () => {
                 </button>
             </div>
             <div className="currentHighestScore">
-                { formatWording("general.local.step", {count: highestScore, avg: averageScore? averageScore: formatWording("general.default.score", {})}) }
+                <span className="score-badge">
+                    { formatWording("general.local.step", {count: highestScore, avg: averageScore? averageScore: formatWording("general.default.score", {})}) }
+                </span>
                 <a className="clearStorage" onClick={() => {
                     if (window.confirm(formatWording("alert.local.clean.playingHistory", {}))) {
                         logger.info("Remove playing record");

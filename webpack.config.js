@@ -61,10 +61,16 @@ module.exports = (env, argv = {}) => {
                         'sass-loader'
                     ],
                 },
+                {
+                    test: /\.(woff2?|ttf)$/,
+                    type: 'asset/resource',
+                    generator: { filename: 'static/fonts/[name][ext]' }
+                },
             ]
         },
         devServer: {
-            historyApiFallback: true
+            historyApiFallback: true,
+            port: 8080
         },
         optimization: {
             minimizer: [
