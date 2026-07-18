@@ -26,9 +26,17 @@ const logger = Logger({className: "MainPage"});
 const NUM_INPUT_PLACEHOLDER = formatWording("general.local.inputNumber.placeHolder", {});
 const RULES = env.GAME.RULE;
 
+const createTarget = (previousTarget = "") => {
+    let nextTarget = previousTarget;
+    while (nextTarget === previousTarget) {
+        nextTarget = shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join('');
+    }
+    return nextTarget;
+};
+
 const initStorage = () => {
     return storage.loadAll({
-        initTarget: shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join(''),
+        initTarget: createTarget(),
         initRecord: [],
         initStep: 0,
         initIsWinning: false,
@@ -55,6 +63,8 @@ const MainPage = () => {
 
     const count = useRef(initStep);
     const isMounted = useRef(false);
+    const inputGroupRef = useRef(null);
+    const submitButtonRef = useRef(null);
 
     useEffect(() => {
         if (isMounted.current) {
@@ -71,14 +81,6 @@ const MainPage = () => {
     }, [target, record, isWin, playingHistory, highestScore, averageScore]);
 
     useEffect(() => {
-        if (isMounted.current) {
-            resetStates();
-            noticeWording(formatWording("general.newRound", {}), 1500);
-            logger.verbose(`New target number: ${target}`);
-        }
-    }, [target]);
-
-    useEffect(() => {
         if (isMounted.current && isWin) {
             setInputEditable(false);
             setAlertVisible(true);
@@ -92,15 +94,8 @@ const MainPage = () => {
             if (highestScore === formatWording("general.default.score", {}) || count.current < Number(highestScore)) currentHighestScore = count.current;
             setHighestScore(currentHighestScore);
 
-            let avg = count.current;
-            let temp = currentPlayingHistory.split(",");
-            const length = temp.length;
-            if (length > 0) {
-                temp = temp.map(str => Number(str));
-                temp = temp.reduce((partialSum, a) => partialSum + a, count.current);
-                avg = temp / (length+1);
-                avg = Math.floor(avg);
-            }
+            const scores = currentPlayingHistory.split(",").map(str => Number(str));
+            const avg = Math.floor(scores.reduce((partialSum, score) => partialSum + score, 0) / scores.length);
             setAverageScore(avg);
         }
     }, [isWin]);
@@ -140,6 +135,8 @@ const MainPage = () => {
         if (isWin) return;
         logger.info("Compare answer");
         const guess = num.replace(/\D/g, '');
+        let shouldReturnFocus = true;
+
         if (!checkInputs(guess) || [...new Set(guess)].length < 4 || guess.length !== 4) {
             logger.info("Invalid input");
             noticeWording(formatWording("error.invalid.inputNumber", {}), 1500);
@@ -154,9 +151,13 @@ const MainPage = () => {
                 logger.info("Winning");
                 noticeWording(formatWording("alert.local.win", {count: count.current}));
                 setIsWin(true);
+                shouldReturnFocus = false;
             }
         }
         setNum("");
+        if (shouldReturnFocus) {
+            window.requestAnimationFrame(() => inputGroupRef.current?.focusFirst());
+        }
     };
 
     const handleOverlayClick = useCallback(() => {
@@ -165,8 +166,12 @@ const MainPage = () => {
 
     const newRound = useCallback(() => {
         logger.info("New round");
-        setTarget(shuffleArray(env.GAME.NUMBER_RANGE).slice(0, 4).join(''));
-    }, []);
+        const nextTarget = createTarget(target);
+        resetStates();
+        setTarget(nextTarget);
+        noticeWording(formatWording("general.newRound", {}), 1500);
+        logger.verbose(`New target number: ${nextTarget}`);
+    }, [target]);
 
     const handleRestartClick = useCallback(() => {
         if (!window.confirm(formatWording("alert.restart.confirm", {}))) return;
@@ -183,20 +188,26 @@ const MainPage = () => {
                     cancel: () => handleOverlayClick()
                 }}
                 isAlertVisible={isAlertVisible}/>
-            <button type="button" className="game-back-btn" onClick={() => navigate(-1)}>
-                <FiArrowLeft aria-hidden="true" />
-                <span>{formatWording("general.btn.back", {})}</span>
-            </button>
+            <div className="game-toolbar">
+                <button type="button" className="game-back-btn" onClick={() => navigate(-1)}>
+                    <FiArrowLeft aria-hidden="true" />
+                    <span>{formatWording("general.btn.back", {})}</span>
+                </button>
+                <RestartBtn onClick={() => handleRestartClick()} value={formatWording("general.restart", {})}/>
+            </div>
             <div className="rule-block"><InfoBlock text={RULES}/></div>
             <div className="input-block">
                 <DigitInputGroup
+                    ref={inputGroupRef}
                     value={num}
                     disabled={!inputEditable}
                     onChange={setNum}
+                    onComplete={() => submitButtonRef.current?.focus()}
                     onSubmit={compareAnswer}
                     placeholder={NUM_INPUT_PLACEHOLDER}
                 />
                 <button
+                    ref={submitButtonRef}
                     type="button"
                     className="submit-answer-btn"
                     disabled={!inputEditable}
@@ -208,7 +219,7 @@ const MainPage = () => {
                 <span className="score-badge">
                     { formatWording("general.local.step", {count: highestScore, avg: averageScore? averageScore: formatWording("general.default.score", {})}) }
                 </span>
-                <a className="clearStorage" onClick={() => {
+                <button type="button" className="clearStorage" onClick={() => {
                     if (window.confirm(formatWording("alert.local.clean.playingHistory", {}))) {
                         logger.info("Remove playing record");
                         storage.setStorage(env.LOCAL.STORAGE.PLAYING_HISTORY, "");
@@ -218,15 +229,12 @@ const MainPage = () => {
                         setPlayingHistory("");
                         setAverageScore(0);
                     }
-                }}>{formatWording("general.clean.playingHistory", {})}</a>
+                }}>{formatWording("general.clean.playingHistory", {})}</button>
             </div>
-            {isWin && (
-                <div className="button-area">
-                    <RestartBtn onClick={() => handleRestartClick()} value={formatWording("general.restart", {})}/>
-                </div>
-            )}
             <div className="notice-block"><Notice text={notice}/></div>
-            <div className="record-block"><Record record={record}/></div>
+            <div className="record-block">
+                {record.length > 0 ? <Record record={record}/> : <div className="record-empty">{NUM_INPUT_PLACEHOLDER}</div>}
+            </div>
         </div>
     );
 };

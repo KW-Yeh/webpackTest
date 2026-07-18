@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useImperativeHandle, useRef } from "react";
 
 const DIGIT_COUNT = 4;
 
@@ -11,7 +11,7 @@ const normalizeValue = (value) => {
     return digits.concat(Array(DIGIT_COUNT).fill(' ')).slice(0, DIGIT_COUNT);
 };
 
-const DigitInputGroup = ({ value, disabled = false, placeholder = "", onChange, onSubmit }) => {
+const DigitInputGroup = React.forwardRef(({ value, disabled = false, placeholder = "", onChange, onSubmit, onComplete }, ref) => {
     const inputRefs = useRef([]);
     const digits = normalizeValue(value);
 
@@ -24,6 +24,20 @@ const DigitInputGroup = ({ value, disabled = false, placeholder = "", onChange, 
         if (!input) return;
         input.focus();
         input.select();
+    };
+
+    useImperativeHandle(ref, () => ({
+        focusFirst: () => focusIndex(0),
+    }));
+
+    const focusNext = (index, digitLength) => {
+        const nextIndex = index + digitLength;
+        if (nextIndex >= DIGIT_COUNT) {
+            onComplete?.();
+            return;
+        }
+
+        focusIndex(nextIndex);
     };
 
     const handleChange = (index, event) => {
@@ -41,8 +55,7 @@ const DigitInputGroup = ({ value, disabled = false, placeholder = "", onChange, 
         });
         emitChange(nextDigits);
 
-        const nextIndex = Math.min(index + nextValue.length, DIGIT_COUNT - 1);
-        focusIndex(nextIndex);
+        focusNext(index, nextValue.length);
     };
 
     const handleKeyDown = (index, event) => {
@@ -82,7 +95,7 @@ const DigitInputGroup = ({ value, disabled = false, placeholder = "", onChange, 
             nextDigits[index + offset] = digit;
         });
         emitChange(nextDigits);
-        focusIndex(Math.min(index + pastedValue.length, DIGIT_COUNT - 1));
+        focusNext(index, pastedValue.length);
     };
 
     return (
@@ -106,6 +119,6 @@ const DigitInputGroup = ({ value, disabled = false, placeholder = "", onChange, 
             ))}
         </div>
     );
-};
+});
 
 export default React.memo(DigitInputGroup);

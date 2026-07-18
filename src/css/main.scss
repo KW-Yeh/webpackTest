@@ -3,13 +3,27 @@
 .container-main {
   display: flex;
   flex-direction: column;
-  width: min(100%, 430px);
+  width: min(100%, 480px);
   align-items: stretch;
-  gap: 16px;
+  gap: 14px;
   padding: 28px;
   background: var(--nt-surface);
   border: 1px solid var(--nt-hairline);
   border-radius: var(--nt-r-lg);
+  box-shadow: var(--nt-shadow-1);
+}
+
+.game-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+
+  .restart-action-btn {
+    width: auto;
+    min-width: 128px;
+  }
 }
 
 /* Rule / instructions feature-card (S4) */
@@ -126,8 +140,15 @@
 }
 
 .clearStorage {
-  margin: 0 0 0 8px;
-  text-decoration: none;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--nt-r-full);
+  font-size: 13px;
+  line-height: 1.2;
+  text-decoration: underline;
 }
 
 .button-area {
@@ -142,7 +163,7 @@
   width: 100%;
   min-height: var(--nt-control-height);
   border-radius: var(--nt-r-full);
-  padding: 0 22px;
+  padding: 0 18px;
   background: var(--nt-canvas-soft);
   border: 1px solid var(--nt-hairline);
   color: var(--nt-ink);
@@ -198,6 +219,20 @@
   max-height: 340px;
   overflow: auto;
   margin: 0;
+}
+
+.record-empty {
+  min-height: 72px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border: 1px dashed var(--nt-hairline);
+  border-radius: var(--nt-r-md);
+  color: var(--nt-ink-muted);
+  font-size: 14px;
+  line-height: 1.43;
+  text-align: center;
+  background: var(--nt-canvas-soft);
 }
 
 .record-block::-webkit-scrollbar {
@@ -604,7 +639,20 @@
     border-radius: 0;
     border-left: 0;
     border-right: 0;
-    justify-content: center;
+    justify-content: flex-start;
+    box-shadow: none;
+  }
+
+  .game-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 4px 0;
+    background: var(--nt-surface);
+
+    .restart-action-btn {
+      min-width: 112px;
+    }
   }
 
   .rule-block {
