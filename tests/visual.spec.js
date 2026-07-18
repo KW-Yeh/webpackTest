@@ -85,7 +85,14 @@ test.describe('#/__screens dev boards & components', () => {
             await page.locator('[data-screen="root"]').waitFor({ state: 'visible' });
             const target = page.locator(`[data-screen="${id}"]`);
             await target.scrollIntoViewIfNeeded();
-            await expect(target).toHaveScreenshot(`screen-${id}.png`);
+            // The toast is position:fixed. Capturing its section clips the actual
+            // card out of the image, so MX-15 intentionally captures the viewport.
+            if (id === 'notification') {
+                await expect(page.locator('.notification.show')).toBeVisible();
+                await expect(page).toHaveScreenshot(`screen-${id}.png`);
+            } else {
+                await expect(target).toHaveScreenshot(`screen-${id}.png`);
+            }
         });
     }
 });

@@ -1,3 +1,5 @@
+@use './typography';
+
 .container-main {
   display: flex;
   flex-direction: column;
@@ -247,7 +249,7 @@
   flex: 1;
   cursor: default;
   margin: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  @extend %tabular-nums-inter;
   letter-spacing: 0;
 }
 
@@ -294,9 +296,8 @@
   background: rgba(221, 91, 0, 0.12);
 }
 
-/* Notification toast (S7) — feature-card shape (--nt-r-lg) + Level-2 shadow.
-   Light surface / hairline (not night: dark colour is reserved for the win
-   Modal + party sidebar per D4). Fully token-driven. */
+/* Notification toast — a white, elevated surface that stays out of the
+   mobile reading and control area. */
 .notification {
   visibility: hidden;
   min-height: 50px;
@@ -305,12 +306,12 @@
   background: var(--nt-surface);
   color: var(--nt-ink);
   border: 1px solid var(--nt-hairline);
-  border-radius: var(--nt-r-lg);
+  border-radius: var(--nt-r-xl);
   box-shadow: var(--nt-shadow-2);
   text-align: left;
   padding: 8px 14px;
   position: fixed;
-  z-index: 1;
+  z-index: 10;
   left: 50%;
   transform: translateX(-50%);
   bottom: 30px;
@@ -367,13 +368,10 @@
 .modal-alert {
   width: min(320px, calc(100vw - 32px));
   z-index: 999;
-  max-height: 220px;
-  overflow: hidden;
-  position: absolute;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  position: relative;
   cursor: default;
-  top: 40%;
-  left: 50%;
-  transform: translateX(-50%);
 }
 
 .alert-block {
@@ -438,9 +436,13 @@
   bottom: 0;
   background-color: var(--nt-overlay);
   z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
 }
 
-/* ── S5 winning "night" hero panel (one of two sanctioned night uses, D4) ── */
+/* Winning modal: elevated white surface; celebration colours remain decorative. */
 .modal-alert-winning {
   max-height: none;
 }
@@ -449,15 +451,15 @@
   position: relative;
   overflow: hidden;
   padding: 26px 20px 22px;
-  background: var(--nt-secondary);            /* deep-indigo night */
-  border-color: transparent;
-  border-radius: var(--nt-r-lg);
-  color: var(--nt-on-primary);
+  background: var(--nt-surface);
+  border-color: var(--nt-hairline);
+  border-radius: var(--nt-r-xl);
+  color: var(--nt-ink);
   box-shadow: var(--nt-shadow-2);
 
   .alert-header {
-    color: var(--nt-on-primary);
-    border-bottom-color: rgba(255, 255, 255, 0.18);
+    color: var(--nt-ink);
+    border-bottom-color: var(--nt-divider);
     font-size: 20px;
     font-weight: 700;
     letter-spacing: var(--nt-tracking-display);
@@ -465,7 +467,7 @@
 
   .alert-content {
     margin: 18px 0 16px;
-    color: rgba(255, 255, 255, 0.78);          /* on-dark secondary text */
+    color: var(--nt-ink-muted);
   }
 
   .win-step {
@@ -479,24 +481,24 @@
   .win-step-unit {
     font-size: 15px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.78);
+    color: var(--nt-ink-muted);
   }
 
-  /* prominent display-grade step count on the night panel */
+  /* Prominent display-grade step count without changing the modal surface. */
   .win-step-number {
     font-size: 48px;
     font-weight: 700;
     line-height: 1;
     letter-spacing: var(--nt-tracking-display);
-    color: var(--nt-primary-on-dark);          /* bright blue, >=3:1 on night */
+    color: var(--nt-primary);
   }
 
   .next-round-btn {
     position: relative;
     z-index: 1;
-    background: var(--nt-primary-on-dark);      /* bright blue CTA */
-    border-color: var(--nt-primary-on-dark);
-    color: var(--nt-ink);                       /* dark ink for strong contrast */
+    background: var(--nt-primary);
+    border-color: var(--nt-primary);
+    color: var(--nt-on-primary);
     font-weight: 600;
   }
 
@@ -505,8 +507,27 @@
   }
 
   .next-round-btn:focus-visible {
-    outline: 2px solid var(--nt-on-primary);
+    outline: 2px solid var(--nt-primary-active);
     outline-offset: 2px;
+  }
+}
+
+@media (max-width: 640px) {
+  .notification {
+    width: calc(100vw - 32px);
+    min-width: 0;
+    top: max(12px, env(safe-area-inset-top));
+    bottom: auto;
+  }
+
+  @keyframes fadein {
+    from { top: 0; opacity: 0; }
+    to { top: max(12px, env(safe-area-inset-top)); opacity: 1; }
+  }
+
+  @keyframes fadeout {
+    from { top: max(12px, env(safe-area-inset-top)); opacity: 1; }
+    to { top: 0; opacity: 0; }
   }
 }
 
