@@ -1,3 +1,5 @@
+@use './typography';
+
 .container-party {
   display: flex;
   flex-direction: column;
@@ -88,7 +90,7 @@
   font-weight: 600;
   letter-spacing: 6px;
   color: var(--nt-ink);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  @extend %tabular-nums-inter;
 }
 
 .party-invite-block {
@@ -153,7 +155,7 @@
   border-radius: var(--nt-r-full);
   background: var(--nt-canvas);
   color: var(--nt-ink-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  @extend %tabular-nums-inter;
   font-size: 13px;
   line-height: 1.4;
   letter-spacing: 2px;
@@ -303,7 +305,7 @@
 }
 
 .party-record-guess {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  @extend %tabular-nums-inter;
   letter-spacing: 2px;
 }
 
@@ -322,41 +324,42 @@
   flex-direction: column;
   gap: 10px;
   padding: 22px;
-  background: var(--nt-secondary);
+  background: var(--nt-surface);
   border-radius: var(--nt-r-lg);
+  border: 1px solid var(--nt-hairline);
   box-shadow: var(--nt-shadow-1);
-  color: var(--nt-on-primary);
+  color: var(--nt-ink);
 
-  /* night-panel foreground: player names / links / CTAs use the bright blue
-     (--nt-primary #0075de on --nt-secondary is only 2.45:1; --nt-primary-on-dark >=3:1) */
+  /* An app-shell information panel uses ink text; links retain the primary affordance. */
   .party-player-name,
-  .party-peer-name,
+  .party-peer-name {
+    color: var(--nt-ink);
+  }
+
   a {
-    color: var(--nt-primary-on-dark);
+    color: var(--nt-primary);
   }
 
   .party-peer-status {
-    box-shadow: 0 0 0 2px var(--nt-secondary);
+    box-shadow: 0 0 0 2px var(--nt-surface);
   }
 }
 
 .party-sidebar-title {
-  /* night-panel muted label: semi-transparent white derived from --nt-on-primary */
-  color: color-mix(in srgb, var(--nt-on-primary) 72%, transparent);
+  color: var(--nt-ink-muted);
 }
 
 .party-sidebar-target {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  @extend %tabular-nums-inter;
   font-size: 28px;
   font-weight: 600;
   letter-spacing: 4px;
-  color: var(--nt-on-primary);
+  color: var(--nt-ink);
 }
 
 .party-sidebar-divider {
   height: 1px;
-  /* faint hairline on night panel (18% white) */
-  background: color-mix(in srgb, var(--nt-on-primary) 18%, transparent);
+  background: var(--nt-hairline);
   margin: 4px 0;
 }
 
@@ -364,14 +367,13 @@
   font-size: 17px;
   line-height: 1.35;
   font-weight: 600;
-  /* winner highlight: bright blue for night-panel contrast (>=3:1) */
-  color: var(--nt-primary-on-dark);
+  color: var(--nt-ink);
 }
 
 .party-sidebar-steps {
   font-size: 14px;
   line-height: 1.43;
-  color: color-mix(in srgb, var(--nt-on-primary) 78%, transparent);
+  color: var(--nt-ink-muted);
 }
 
 .info-block {
@@ -536,7 +538,7 @@
 
 .party-waiting-room-code {
   color: var(--nt-ink);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  @extend %tabular-nums-inter;
   font-size: clamp(30px, 4vw, 40px);
   font-weight: 600;
   letter-spacing: 6px;

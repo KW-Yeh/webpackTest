@@ -1,5 +1,8 @@
 const { defineConfig, devices } = require('@playwright/test');
 
+const port = Number(process.env.PW_PORT || '8080');
+const baseURL = `http://localhost:${port}`;
+
 /**
  * Visual + functional regression config for the Notion re-skin.
  * Dev server is webpack-dev-server (HashRouter) on a pinned port 8080.
@@ -19,7 +22,7 @@ module.exports = defineConfig({
         },
     },
     use: {
-        baseURL: 'http://localhost:8080',
+        baseURL,
         trace: 'on-first-retry',
     },
     projects: [
@@ -39,9 +42,9 @@ module.exports = defineConfig({
         },
     ],
     webServer: {
-        command: 'npm run dev',
-        url: 'http://localhost:8080',
-        reuseExistingServer: true,
+        command: `npm run dev -- --port ${port}`,
+        url: baseURL,
+        reuseExistingServer: process.env.PW_REUSE_EXISTING_SERVER === 'true',
         timeout: 120000,
     },
 });

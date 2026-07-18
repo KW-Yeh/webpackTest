@@ -2,6 +2,7 @@ import '../../css/party.scss';
 import '../../css/main.scss';
 import '../../css/opening_v2.scss';
 import React from 'react';
+import { MdCircleNotifications } from 'react-icons/md';
 
 import WaitingRoom from '../PartyPage/WaitingRoom.jsx';
 import CoopBoard from '../PartyPage/CoopBoard.jsx';
@@ -249,7 +250,7 @@ const Screens = () => {
 
             <Screen id="notification" title="Notification (toast, shown state)">
                 <div className="notification show">
-                    <i className="notification-icon" />
+                    <i className="notification-icon" aria-hidden="true"><MdCircleNotifications size={30} /></i>
                     <div className="notification-body">
                         {formatWording('party.status.reconnected', {})}
                     </div>

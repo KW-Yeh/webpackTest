@@ -1,0 +1,6 @@
+// Shared type treatments (D-004): numeric/UI text renders in Inter with
+// lining/tabular numerals instead of swapping to a monospace font stack.
+%tabular-nums-inter {
+  font-family: var(--nt-font);
+  font-variant-numeric: tabular-nums;
+}

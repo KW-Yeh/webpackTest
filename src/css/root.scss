@@ -1,3 +1,5 @@
+@use './typography';
+
 @font-face {
   font-family: "Inter";
   font-style: normal;
@@ -35,7 +37,7 @@
   --nt-primary: #0075de;          /* only structural colour: CTA / link / focus */
   --nt-primary-active: #005bab;   /* pressed primary */
   --nt-primary-on-dark: #4c9bf5;  /* bright blue foreground on night panels (>=3:1) */
-  --nt-secondary: #213183;        /* deep-indigo "night" (win modal + party sidebar only) */
+  --nt-secondary: #213183;        /* reserved for a single, explicitly approved hero band */
   --nt-ink: #191918;              /* primary text (~95% black) */
   --nt-ink-secondary: #31302e;    /* secondary text */
   --nt-ink-muted: #615d59;        /* muted text (>=4.5:1) */
@@ -220,7 +222,7 @@ input[type=number] {
   border-radius: var(--nt-r-xs);
   padding: 0;
   text-align: center;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  @extend %tabular-nums-inter;
   font-size: 22px;
   font-weight: 600;
   line-height: 1;
