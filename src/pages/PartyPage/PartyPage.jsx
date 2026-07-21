@@ -1,5 +1,6 @@
 import '../../css/party.scss';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { FiCheck, FiRefreshCw, FiX } from 'react-icons/fi';
 import { shallowEqual, useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
@@ -14,6 +15,75 @@ import RaceBoard from './RaceBoard.jsx';
 import WaitingRoom from './WaitingRoom.jsx';
 
 const createTarget = () => shuffleArray([...env.GAME.NUMBER_RANGE]).slice(0, 4).join('');
+
+const RestartVotePanel = ({ vote, roster, meId, isHost, onRequest, onVote }) => {
+    const [remainingSeconds, setRemainingSeconds] = useState(0);
+    const allPlayersOnline = roster.length >= 2 && roster.every((player) => player.online);
+
+    useEffect(() => {
+        if (!vote) return undefined;
+        const updateRemaining = () => {
+            setRemainingSeconds(Math.max(0, Math.ceil((vote.expiresAt - Date.now()) / 1000)));
+        };
+        updateRemaining();
+        const timer = setInterval(updateRemaining, 250);
+        return () => clearInterval(timer);
+    }, [vote]);
+
+    if (!vote) {
+        if (!isHost) return null;
+        return (
+            <div className="party-restart-controls">
+                <button
+                    type="button"
+                    className="party-restart-request"
+                    disabled={!allPlayersOnline}
+                    onClick={onRequest}
+                >
+                    <FiRefreshCw aria-hidden="true" />
+                    <span>{formatWording('party.restart.button', {})}</span>
+                </button>
+                {!allPlayersOnline && (
+                    <span className="party-restart-unavailable">
+                        {formatWording('party.restart.requiresOnline', {})}
+                    </span>
+                )}
+            </div>
+        );
+    }
+
+    const hasVoted = vote.approvedIds.includes(meId);
+    return (
+        <section className="party-restart-vote" aria-labelledby="party-restart-title">
+            <div>
+                <h2 id="party-restart-title">{formatWording('party.restart.title', {})}</h2>
+                <p>{formatWording('party.restart.description', {})}</p>
+                <div className="party-restart-progress" role="status" aria-live="polite">
+                    {formatWording('party.restart.progress', {
+                        approved: vote.approvedIds.length,
+                        total: vote.requiredIds.length,
+                        seconds: remainingSeconds,
+                    })}
+                </div>
+            </div>
+            {!isHost && !hasVoted && (
+                <div className="party-restart-actions">
+                    <button type="button" className="is-approve" onClick={() => onVote(true)}>
+                        <FiCheck aria-hidden="true" />
+                        <span>{formatWording('party.restart.agree', {})}</span>
+                    </button>
+                    <button type="button" className="is-reject" onClick={() => onVote(false)}>
+                        <FiX aria-hidden="true" />
+                        <span>{formatWording('party.restart.reject', {})}</span>
+                    </button>
+                </div>
+            )}
+            {hasVoted && (
+                <div className="party-restart-agreed">{formatWording('party.restart.agreed', {})}</div>
+            )}
+        </section>
+    );
+};
 
 const GameChat = ({ messages, meId, onSend }) => {
     const [text, setText] = useState('');
@@ -97,6 +167,10 @@ const PartyPage = () => {
         room.actions.startGame(createTarget());
     }, [room.actions]);
 
+    const requestRestart = useCallback(() => {
+        room.actions.requestRestart(createTarget());
+    }, [room.actions]);
+
     if (room.phase === PARTY_PHASE.CONNECTING) {
         return (
             <main className="container-party party-connecting">
@@ -141,6 +215,7 @@ const PartyPage = () => {
         isResult: room.phase === PARTY_PHASE.RESULT,
         isHost: room.isHost,
         notice: room.notice,
+        isRestartPending: Boolean(room.restartVote),
         onReturnToWaiting: room.actions.returnToWaitingRoom,
     };
 
@@ -149,15 +224,25 @@ const PartyPage = () => {
             <button type="button" className="game-back-btn" onClick={leaveRoom}>
                 {formatWording('party.waiting.leave', {})}
             </button>
+            <RestartVotePanel
+                vote={room.restartVote}
+                roster={room.roster}
+                meId={room.me.id}
+                isHost={room.isHost}
+                onRequest={requestRestart}
+                onVote={room.actions.voteRestart}
+            />
             <div className="party-playing-layout">
                 {room.mode === PARTY_MODE.COOP ? (
                     <CoopBoard
+                        key={room.game.startAt}
                         {...commonBoardProps}
                         submittedIds={room.coopSubmittedIds}
                         onSubmit={room.actions.submitCoop}
                     />
                 ) : (
                     <RaceBoard
+                        key={room.game.startAt}
                         {...commonBoardProps}
                         onProgress={room.actions.sendRaceProgress}
                         onWin={room.actions.sendRaceWin}

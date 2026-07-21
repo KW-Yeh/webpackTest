@@ -20,6 +20,7 @@ const RaceBoard = ({
     roster,
     meId,
     isResult,
+    isRestartPending,
     isHost,
     notice,
     onProgress,
@@ -41,7 +42,7 @@ const RaceBoard = ({
     );
 
     const handleSubmit = () => {
-        if (finished || isResult) return;
+        if (finished || isResult || isRestartPending) return;
         const normalized = guess.replace(/\D/g, '');
         if (!checkInputs(normalized) || !isValidGuess(normalized)) {
             setValidationNotice(formatWording('error.invalid.inputNumber', {}));
@@ -67,7 +68,7 @@ const RaceBoard = ({
                     <div className="party-board-mode">{formatWording('party.mode.race', {})}</div>
                     <h1>{formatWording('party.race.title', {})}</h1>
                 </div>
-                {isResult && isHost && (
+                {isResult && isHost && !isRestartPending && (
                     <button type="button" className="party-secondary-btn" onClick={onReturnToWaiting}>
                         {formatWording('party.btn.backToWaiting', {})}
                     </button>
@@ -87,12 +88,12 @@ const RaceBoard = ({
                 <div className="party-input-block">
                     <DigitInputGroup
                         value={guess}
-                        disabled={finished}
+                        disabled={finished || isRestartPending}
                         onChange={setGuess}
                         onSubmit={handleSubmit}
                         placeholder={formatWording('general.local.inputNumber.placeHolder', {})}
                     />
-                    <button type="button" className="submit-answer-btn" disabled={finished} onClick={handleSubmit}>
+                    <button type="button" className="submit-answer-btn" disabled={finished || isRestartPending} onClick={handleSubmit}>
                         {formatWording(finished ? 'party.race.finished' : 'party.btn.submit', {})}
                     </button>
                 </div>

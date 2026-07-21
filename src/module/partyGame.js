@@ -15,3 +15,24 @@ export const compareRaceWins = (left, right) => (
     || left.step - right.step
     || left.id.localeCompare(right.id)
 );
+
+export const createRestartVote = ({ id, hostId, playerIds, requestedAt, expiresAt }) => ({
+    id,
+    requestedAt,
+    expiresAt,
+    requiredIds: [...new Set(playerIds)],
+    approvedIds: [hostId],
+});
+
+export const applyRestartVote = (vote, playerId, approved) => {
+    if (!vote || !vote.requiredIds.includes(playerId) || vote.approvedIds.includes(playerId)) {
+        return { vote, outcome: 'ignored' };
+    }
+    if (!approved) return { vote, outcome: 'rejected' };
+
+    const nextVote = { ...vote, approvedIds: [...vote.approvedIds, playerId] };
+    const outcome = nextVote.requiredIds.every((id) => nextVote.approvedIds.includes(id))
+        ? 'approved'
+        : 'pending';
+    return { vote: nextVote, outcome };
+};

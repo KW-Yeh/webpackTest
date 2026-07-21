@@ -11,6 +11,7 @@ const CoopBoard = ({
     meId,
     submittedIds,
     isResult,
+    isRestartPending,
     isHost,
     notice,
     onSubmit,
@@ -43,7 +44,7 @@ const CoopBoard = ({
     }, [roster, rounds]);
 
     const handleSubmit = () => {
-        if (hasSubmitted || isResult) return;
+        if (hasSubmitted || isResult || isRestartPending) return;
         const normalized = guess.replace(/\D/g, '');
         if (!checkInputs(normalized) || !isValidGuess(normalized)) {
             setValidationNotice(formatWording('error.invalid.inputNumber', {}));
@@ -62,7 +63,7 @@ const CoopBoard = ({
                     <div className="party-board-mode">{formatWording('party.mode.coop', {})}</div>
                     <h1>{formatWording('party.coop.round', { count: round })}</h1>
                 </div>
-                {isResult && isHost && (
+                {isResult && isHost && !isRestartPending && (
                     <button type="button" className="party-secondary-btn" onClick={onReturnToWaiting}>
                         {formatWording('party.btn.backToWaiting', {})}
                     </button>
@@ -81,12 +82,12 @@ const CoopBoard = ({
                 <div className="party-input-block">
                     <DigitInputGroup
                         value={guess}
-                        disabled={hasSubmitted}
+                        disabled={hasSubmitted || isRestartPending}
                         onChange={setGuess}
                         onSubmit={handleSubmit}
                         placeholder={formatWording('general.local.inputNumber.placeHolder', {})}
                     />
-                    <button type="button" className="submit-answer-btn" disabled={hasSubmitted} onClick={handleSubmit}>
+                    <button type="button" className="submit-answer-btn" disabled={hasSubmitted || isRestartPending} onClick={handleSubmit}>
                         {formatWording(hasSubmitted ? 'party.coop.submitted' : 'party.btn.submit', {})}
                     </button>
                 </div>

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Logger } from './logger';
-import { calculateAB, compareRaceWins, isValidGuess } from './partyGame';
+import {
+    applyRestartVote,
+    calculateAB,
+    compareRaceWins,
+    createRestartVote,
+    isValidGuess,
+} from './partyGame';
 import { clearPartyRoom, loadPartyRoom, savePartyRoom } from './partyRoomStorage';
 import {
     connectToHost,
@@ -27,6 +33,7 @@ const RECONNECT_GRACE_MS = 60000;
 const RECONNECT_RETRY_MS = 3000;
 const SIGNALING_RECONNECT_WATCHDOG_MS = 5000;
 const RACE_WIN_WINDOW_MS = 500;
+const RESTART_VOTE_TIMEOUT_MS = 30000;
 const PARTY_SESSION_ID_KEY = 'bulls-cows-party-session-id';
 
 const createSessionId = () => {
@@ -65,6 +72,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     const [messages, setMessages] = useState([]);
     const [game, setGame] = useState(createInitialGame);
     const [coopSubmittedIds, setCoopSubmittedIds] = useState([]);
+    const [restartVote, setRestartVote] = useState(null);
     const [notice, setNotice] = useState('');
     const [connectionIssue, setConnectionIssue] = useState(false);
     const [closed, setClosed] = useState(false);
@@ -91,6 +99,9 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     const guestHeartbeatRef = useRef(null);
     const hostHeartbeatRef = useRef(null);
     const raceWindowRef = useRef(null);
+    const restartVoteRef = useRef(null);
+    const restartTargetRef = useRef('');
+    const restartTimerRef = useRef(null);
     const destroyedRef = useRef(false);
     const closedRef = useRef(false);
     const modeRef = useRef(mode);
@@ -111,6 +122,11 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     const updateGame = useCallback((nextGame) => {
         gameRef.current = nextGame;
         setGame(nextGame);
+    }, []);
+
+    const updateRestartVote = useCallback((nextVote) => {
+        restartVoteRef.current = nextVote;
+        setRestartVote(nextVote);
     }, []);
 
     const clearInitialConnectionTimer = useCallback(() => {
@@ -200,8 +216,27 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 ...currentGame,
                 coop: { ...currentGame.coop, submissions },
             },
+            restartVote: restartVoteRef.current,
         };
     }, []);
+
+    const clearRestartTimer = useCallback(() => {
+        if (!restartTimerRef.current) return;
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+    }, []);
+
+    const cancelRestartVote = useCallback((reason) => {
+        if (!isHost || !restartVoteRef.current) return;
+        const voteId = restartVoteRef.current.id;
+        clearRestartTimer();
+        restartTargetRef.current = '';
+        updateRestartVote(null);
+        broadcast(PARTY_MESSAGE.RESTART_CANCEL, { id: voteId, reason });
+        setNotice(reason === 'timeout'
+            ? '重新開始提議已逾時取消。'
+            : '重新開始提議未獲全員同意，已取消。');
+    }, [broadcast, clearRestartTimer, isHost, updateRestartVote]);
 
     const completeCoopRoundIfReady = useCallback(() => {
         if (!isHost || phaseRef.current !== PARTY_PHASE.PLAYING || modeRef.current !== PARTY_MODE.COOP) return;
@@ -231,6 +266,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
 
     const removePlayer = useCallback((playerId) => {
         if (!playersRef.current.has(playerId) || playerId === hostIdRef.current) return;
+        if (restartVoteRef.current?.requiredIds.includes(playerId)) cancelRestartVote('player-left');
         playersRef.current.delete(playerId);
         playerConnectionsRef.current.delete(playerId);
         const sessionId = playerSessionsRef.current.get(playerId);
@@ -241,18 +277,19 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
         removalTimersRef.current.delete(playerId);
         publishRoster();
         setTimeout(completeCoopRoundIfReady, 0);
-    }, [completeCoopRoundIfReady, publishRoster]);
+    }, [cancelRestartVote, completeCoopRoundIfReady, publishRoster]);
 
     const markPlayerOffline = useCallback((playerId) => {
         const player = playersRef.current.get(playerId);
         if (!player || !player.online) return;
+        if (restartVoteRef.current?.requiredIds.includes(playerId)) cancelRestartVote('player-left');
         playersRef.current.set(playerId, { ...player, online: false });
         publishRoster();
         const existingTimer = removalTimersRef.current.get(playerId);
         if (existingTimer) clearTimeout(existingTimer);
         removalTimersRef.current.set(playerId, setTimeout(() => removePlayer(playerId), RECONNECT_GRACE_MS));
         setTimeout(completeCoopRoundIfReady, 0);
-    }, [completeCoopRoundIfReady, publishRoster, removePlayer]);
+    }, [cancelRestartVote, completeCoopRoundIfReady, publishRoster, removePlayer]);
 
     const finalizeRace = useCallback(() => {
         raceWindowRef.current = null;
@@ -269,7 +306,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     }, [broadcast, updateGame, updatePhase]);
 
     const registerRaceWin = useCallback((entry) => {
-        if (!isHost || phaseRef.current !== PARTY_PHASE.PLAYING || modeRef.current !== PARTY_MODE.RACE) return;
+        if (!isHost || restartVoteRef.current || phaseRef.current !== PARTY_PHASE.PLAYING || modeRef.current !== PARTY_MODE.RACE) return;
         const currentGame = gameRef.current;
         const progress = currentGame.race.progress[entry.id];
         if (!Number.isFinite(entry.playMs) || entry.playMs < 0 || !progress || progress.a !== 4 || progress.step !== entry.step) return;
@@ -284,7 +321,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     }, [finalizeRace, isHost, updateGame]);
 
     const processCoopSubmit = useCallback((entry) => {
-        if (!isHost || phaseRef.current !== PARTY_PHASE.PLAYING || modeRef.current !== PARTY_MODE.COOP) return;
+        if (!isHost || restartVoteRef.current || phaseRef.current !== PARTY_PHASE.PLAYING || modeRef.current !== PARTY_MODE.COOP) return;
         const currentGame = gameRef.current;
         if (entry.round !== currentGame.coop.round || currentGame.coop.submissions[entry.id]) return;
         const nextGame = {
@@ -300,6 +337,44 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
         broadcast(PARTY_MESSAGE.SUBMIT, { id: entry.id, round: entry.round });
         setTimeout(completeCoopRoundIfReady, 0);
     }, [broadcast, completeCoopRoundIfReady, isHost, updateGame]);
+
+    const beginGame = useCallback((target) => {
+        const startAt = Math.max(Date.now(), gameRef.current.startAt + 1);
+        const nextGame = {
+            target,
+            startAt,
+            coop: { round: 1, submissions: {}, rounds: [] },
+            race: { progress: {}, wins: [], result: null },
+        };
+        if (raceWindowRef.current) clearTimeout(raceWindowRef.current);
+        raceWindowRef.current = null;
+        clearRestartTimer();
+        restartTargetRef.current = '';
+        updateRestartVote(null);
+        setNotice('');
+        updateGame(nextGame);
+        setCoopSubmittedIds([]);
+        updatePhase(PARTY_PHASE.PLAYING);
+        broadcast(PARTY_MESSAGE.START, { target, mode: modeRef.current, startAt });
+    }, [broadcast, clearRestartTimer, updateGame, updatePhase, updateRestartVote]);
+
+    const processRestartVote = useCallback((playerId, payload) => {
+        const currentVote = restartVoteRef.current;
+        if (!isHost || !currentVote || payload.id !== currentVote.id || Date.now() >= currentVote.expiresAt) return;
+        const result = applyRestartVote(currentVote, playerId, payload.approved === true);
+        if (result.outcome === 'ignored') return;
+        if (result.outcome === 'rejected') {
+            cancelRestartVote('rejected');
+            return;
+        }
+        if (result.outcome === 'approved') {
+            const target = restartTargetRef.current;
+            if (target) beginGame(target);
+            return;
+        }
+        updateRestartVote(result.vote);
+        broadcast(PARTY_MESSAGE.RESTART_REQUEST, result.vote);
+    }, [beginGame, broadcast, cancelRestartVote, isHost, updateRestartVote]);
 
     const handleHostMessage = useCallback((connection, message) => {
         const payload = message.payload;
@@ -404,6 +479,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 break;
             }
             case PARTY_MESSAGE.SUBMIT: {
+                if (Number(payload.gameId) !== gameRef.current.startAt) break;
                 const guess = String(payload.guess || '');
                 if (!isValidGuess(guess)) break;
                 const { a, b } = calculateAB(guess, gameRef.current.target);
@@ -418,7 +494,8 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 break;
             }
             case PARTY_MESSAGE.RACE_PROGRESS: {
-                if (phaseRef.current !== PARTY_PHASE.PLAYING || modeRef.current !== PARTY_MODE.RACE) break;
+                if (restartVoteRef.current || phaseRef.current !== PARTY_PHASE.PLAYING || modeRef.current !== PARTY_MODE.RACE) break;
+                if (Number(payload.gameId) !== gameRef.current.startAt) break;
                 const guess = String(payload.guess || '');
                 const step = Number(payload.step);
                 if (!isValidGuess(guess)) break;
@@ -438,13 +515,20 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 break;
             }
             case PARTY_MESSAGE.RACE_WIN:
-                if (Number.isFinite(Number(payload.playMs)) && Number.isFinite(Number(payload.step))) {
+                if (
+                    Number(payload.gameId) === gameRef.current.startAt
+                    && Number.isFinite(Number(payload.playMs))
+                    && Number.isFinite(Number(payload.step))
+                ) {
                     registerRaceWin({
                         id: playerId,
                         playMs: Math.max(0, Number(payload.playMs)),
                         step: Math.max(1, Number(payload.step)),
                     });
                 }
+                break;
+            case PARTY_MESSAGE.RESTART_VOTE:
+                processRestartVote(playerId, payload);
                 break;
             case PARTY_MESSAGE.PONG:
                 lastSeenRef.current.set(peerId, Date.now());
@@ -458,7 +542,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             default:
                 break;
         }
-    }, [appendChat, broadcast, clearPendingHandshakeTimer, createSyncPayload, processCoopSubmit, publishRoster, registerRaceWin, removePlayer, sendConnection, updateGame]);
+    }, [appendChat, broadcast, clearPendingHandshakeTimer, createSyncPayload, processCoopSubmit, processRestartVote, publishRoster, registerRaceWin, removePlayer, sendConnection, updateGame]);
 
     const handleGuestMessage = useCallback((message) => {
         const payload = message.payload;
@@ -478,6 +562,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 setModeState(modeRef.current);
                 updateGame(payload.game || createInitialGame());
                 setCoopSubmittedIds(Object.keys(payload.game?.coop?.submissions || {}));
+                updateRestartVote(payload.restartVote || null);
                 updatePhase(payload.phase || PARTY_PHASE.WAITING_ROOM);
                 break;
             case PARTY_MESSAGE.CHAT:
@@ -497,6 +582,8 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                     race: { progress: {}, wins: [], result: null },
                 });
                 setCoopSubmittedIds([]);
+                updateRestartVote(null);
+                setNotice('');
                 updatePhase(PARTY_PHASE.PLAYING);
                 break;
             case PARTY_MESSAGE.SUBMIT:
@@ -533,6 +620,18 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
                 updatePhase(PARTY_PHASE.RESULT);
                 break;
             }
+            case PARTY_MESSAGE.RESTART_REQUEST:
+                updateRestartVote(payload);
+                setNotice('');
+                break;
+            case PARTY_MESSAGE.RESTART_CANCEL:
+                if (!restartVoteRef.current || payload.id === restartVoteRef.current.id) {
+                    updateRestartVote(null);
+                    setNotice(payload.reason === 'timeout'
+                        ? '重新開始提議已逾時取消。'
+                        : '重新開始提議未獲全員同意，已取消。');
+                }
+                break;
             case PARTY_MESSAGE.PING:
                 if (guestHeartbeatRef.current) clearTimeout(guestHeartbeatRef.current);
                 guestHeartbeatRef.current = setTimeout(() => {
@@ -560,7 +659,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             default:
                 break;
         }
-    }, [appendChat, clearInitialConnectionTimer, sendConnection, updateGame, updatePhase]);
+    }, [appendChat, clearInitialConnectionTimer, sendConnection, updateGame, updatePhase, updateRestartVote]);
 
     const wireGuestConnection = useCallback((connection) => {
         hostConnectionRef.current = connection;
@@ -824,6 +923,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
     useEffect(() => () => {
         removalTimersRef.current.forEach(clearTimeout);
         if (raceWindowRef.current) clearTimeout(raceWindowRef.current);
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     }, []);
 
     const sendChat = useCallback((textValue) => {
@@ -854,27 +954,61 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
 
     const startGame = useCallback((target) => {
         if (!isHost || phaseRef.current !== PARTY_PHASE.WAITING_ROOM || rosterSnapshot().filter((player) => player.online).length < 2) return false;
-        const startAt = Date.now();
-        const nextGame = {
-            target,
-            startAt,
-            coop: { round: 1, submissions: {}, rounds: [] },
-            race: { progress: {}, wins: [], result: null },
-        };
-        updateGame(nextGame);
-        setCoopSubmittedIds([]);
-        updatePhase(PARTY_PHASE.PLAYING);
-        broadcast(PARTY_MESSAGE.START, { target, mode: modeRef.current, startAt });
+        beginGame(target);
         return true;
-    }, [broadcast, isHost, rosterSnapshot, updateGame, updatePhase]);
+    }, [beginGame, isHost, rosterSnapshot]);
+
+    const requestRestart = useCallback((target) => {
+        const currentPhase = phaseRef.current;
+        const players = rosterSnapshot();
+        const onlinePlayers = players.filter((player) => player.online);
+        if (
+            !isHost
+            || restartVoteRef.current
+            || (currentPhase !== PARTY_PHASE.PLAYING && currentPhase !== PARTY_PHASE.RESULT)
+            || onlinePlayers.length < 2
+            || onlinePlayers.length !== players.length
+        ) return false;
+
+        const requestedAt = Date.now();
+        const vote = createRestartVote({
+            id: `${requestedAt}-${Math.random().toString(36).slice(2)}`,
+            hostId: hostIdRef.current,
+            playerIds: onlinePlayers.map((player) => player.id),
+            requestedAt,
+            expiresAt: requestedAt + RESTART_VOTE_TIMEOUT_MS,
+        });
+        restartTargetRef.current = target;
+        updateRestartVote(vote);
+        setNotice('');
+        broadcast(PARTY_MESSAGE.RESTART_REQUEST, vote);
+        restartTimerRef.current = setTimeout(() => {
+            if (restartVoteRef.current?.id === vote.id) cancelRestartVote('timeout');
+        }, RESTART_VOTE_TIMEOUT_MS);
+        return true;
+    }, [broadcast, cancelRestartVote, isHost, rosterSnapshot, updateRestartVote]);
+
+    const voteRestart = useCallback((approved) => {
+        const vote = restartVoteRef.current;
+        if (!vote || !vote.requiredIds.includes(selfId) || vote.approvedIds.includes(selfId)) return false;
+        if (isHost) {
+            if (!approved) cancelRestartVote('rejected');
+            return false;
+        }
+        return sendConnection(hostConnectionRef.current, PARTY_MESSAGE.RESTART_VOTE, {
+            id: vote.id,
+            approved: approved === true,
+        });
+    }, [cancelRestartVote, isHost, selfId, sendConnection]);
 
     const submitCoop = useCallback((entry) => {
-        const payload = { ...entry, round: gameRef.current.coop.round };
+        const payload = { ...entry, gameId: gameRef.current.startAt, round: gameRef.current.coop.round };
         if (isHost) processCoopSubmit({ ...payload, id: hostIdRef.current });
         else sendConnection(hostConnectionRef.current, PARTY_MESSAGE.SUBMIT, payload);
     }, [isHost, processCoopSubmit, sendConnection]);
 
     const sendRaceProgress = useCallback((progress) => {
+        if (restartVoteRef.current) return;
         const { a, b } = calculateAB(progress.guess, gameRef.current.target);
         const entry = { id: hostIdRef.current, step: progress.step, a, b };
         if (isHost) {
@@ -885,13 +1019,21 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             });
             broadcast(PARTY_MESSAGE.RACE_PROGRESS, entry);
         } else {
-            sendConnection(hostConnectionRef.current, PARTY_MESSAGE.RACE_PROGRESS, { guess: progress.guess, step: progress.step });
+            sendConnection(hostConnectionRef.current, PARTY_MESSAGE.RACE_PROGRESS, {
+                gameId: gameRef.current.startAt,
+                guess: progress.guess,
+                step: progress.step,
+            });
         }
     }, [broadcast, isHost, sendConnection, updateGame]);
 
     const sendRaceWin = useCallback(({ playMs, step }) => {
         if (isHost) registerRaceWin({ id: hostIdRef.current, playMs, step });
-        else sendConnection(hostConnectionRef.current, PARTY_MESSAGE.RACE_WIN, { playMs, step });
+        else sendConnection(hostConnectionRef.current, PARTY_MESSAGE.RACE_WIN, {
+            gameId: gameRef.current.startAt,
+            playMs,
+            step,
+        });
     }, [isHost, registerRaceWin, sendConnection]);
 
     const returnToWaitingRoom = useCallback(() => {
@@ -922,6 +1064,7 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
         messages,
         game,
         coopSubmittedIds,
+        restartVote,
         me,
         isHost,
         notice,
@@ -934,6 +1077,8 @@ export const usePartyRoom = ({ role, roomID, userName }) => {
             submitCoop,
             sendRaceProgress,
             sendRaceWin,
+            requestRestart,
+            voteRestart,
             returnToWaitingRoom,
             leave,
         },
